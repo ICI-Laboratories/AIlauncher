@@ -7,7 +7,8 @@ from .config import Config
 class WorkerPool:
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        self._workers = [LlamaWorker(cfg.model_path, cfg.gpu_idx) for _ in range(cfg.workers)]
+        # Cambiado para pasar la configuración completa al inicializar LlamaWorker
+        self._workers = [LlamaWorker(cfg) for _ in range(cfg.workers)]
         self.free: asyncio.Queue[LlamaWorker] = asyncio.Queue()
         self.busy: set[LlamaWorker] = set()
 
