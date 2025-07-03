@@ -30,7 +30,7 @@ ModelPathOpt = Annotated[
 WorkersOpt = Annotated[
     int,
     typer.Option(
-        2,
+        default=2,  # <-- CORREGIDO
         min=1,
         show_default=True,
         help="Número de procesos llama-cli en paralelo.",
@@ -38,21 +38,21 @@ WorkersOpt = Annotated[
 ]
 
 HostOpt = Annotated[
-    str, typer.Option("0.0.0.0", help="Interfaz en la que escuchará FastAPI.")
+    str, typer.Option(default="0.0.0.0", help="Interfaz en la que escuchará FastAPI.")  # <-- CORREGIDO
 ]
 
 PortOpt = Annotated[
-    int, typer.Option(8000, help="Puerto HTTP para el endpoint REST.")
+    int, typer.Option(default=8000, help="Puerto HTTP para el endpoint REST.")  # <-- CORREGIDO
 ]
 
 MaxTokOpt = Annotated[
-    int, typer.Option(128, help="Límite de tokens a generar por petición.")
+    int, typer.Option(default=128, help="Límite de tokens a generar por petición.")  # <-- CORREGIDO
 ]
 
 LLamaBinOpt = Annotated[
     Optional[Path],
     typer.Option(
-        None,
+        default=None,  # <-- CORREGIDO
         exists=True,
         dir_okay=False,
         writable=False,
@@ -62,12 +62,13 @@ LLamaBinOpt = Annotated[
 
 @cli.command()
 def serve(
+    # --- La firma de la función ahora usa las anotaciones directamente ---
     model_path: ModelPathOpt,
-    workers: WorkersOpt = 2,
-    host: HostOpt = "0.0.0.0",
-    port: PortOpt = 8000,
-    max_tokens: MaxTokOpt = 128,
-    llama_bin: LLamaBinOpt = None,
+    workers: WorkersOpt,
+    host: HostOpt,
+    port: PortOpt,
+    max_tokens: MaxTokOpt,
+    llama_bin: LLamaBinOpt,
 ) -> None:
     env = os.environ.copy()
     env.update(
