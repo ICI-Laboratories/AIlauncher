@@ -1,25 +1,7 @@
 """
 Configuración central de LMServ
 ===============================
-
-* Todas las opciones tienen **sane defaults** y pueden
-  sobre-escribirse vía **variables de entorno** o argumentos CLI.
-* Mantener esta clase liviana ayuda a evitar ciclos de importación;
-  no interactúa con nada fuera de la stdlib.
-
-Variables de entorno soportadas
--------------------------------
-| ENV               | Ejemplo                 | Significado                       |
-|-------------------|-------------------------|-----------------------------------|
-| `MODEL_PATH`      | */data/gemma.gguf*      | Ruta por defecto del modelo       |
-| `WORKERS`         | *3*                     | Nº procesos `llama-cli`           |
-| `HOST`            | *0.0.0.0*               | Dirección de escucha FastAPI      |
-| `PORT`            | *8000*                  | Puerto HTTP                       |
-| `API_KEY`         | *my-secret*             | Token de acceso al endpoint       |
-| `MAX_TOKENS`      | *128*                   | Salida máxima por petición        |
-| `GPU_IDX`         | *0*                     | GPU principal (-mg)               |
-| `VRAM_CAP_MB`     | *24000*                 | Guía para offload de capas        |
-| `LLAMA_BIN`       | */opt/llama/llama-cli*  | Ejecutable explícito              |
+... (file content is the same as the original) ...
 """
 
 from __future__ import annotations
@@ -30,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-_DEFAULT_REL_LLAMA = Path(__file__).resolve().parent / "build/bin/llama-cli"
+_DEFAULT_REL_LLAMA = Path(__file__).resolve().parent / "build/bin/llama-cli.exe"
 
 
 @dataclass(slots=True)
@@ -95,3 +77,5 @@ class Config:
             f"host={self.host}, port={self.port}, gpu={self.gpu_idx}"
         )
         return f"<Config {params}>"
+
+# NO config_instance here.

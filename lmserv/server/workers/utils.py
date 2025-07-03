@@ -31,22 +31,19 @@ async def _stream_reader(
 ) -> None:
     """
     Lee el `stream` línea-a-línea y coloca tuplas en `queue`.
-
-    * Cada **línea** se entrega como `(stream_name, data:str)`.
-    * En caso de **EOF** se envía `(stream_name, None)`.
-    * Si ocurre una **excepción** se encapsula como
-      `(stream_name, "ERROR_READER: <msg>")`.
-
-    La corrutina finaliza cuando `proc_control_event` está marcado
-    o al llegar EOF.
     """
     loop = asyncio.get_event_loop()
 
     try:
         while not proc_control_event.is_set():
-            # Nota: usar run_in_executor evita bloquear el loop
-            #       si `readline()` se demora.
             line = await loop.run_in_executor(None, stream.readline)
+
+            # --- DEBUG PRINT ---
+            # This will show you every line received from the llama-cli process
+            if line:
+                print(f"DEBUG [WORKER {worker_id}/{stream_name}]: {line.strip()!r}")
+            # --- END DEBUG ---
+
             if not line:
                 logger.debug("[%s/%s] EOF", worker_id, stream_name)
                 await queue.put((stream_name, None))
@@ -61,7 +58,5 @@ async def _stream_reader(
             await queue.put((stream_name, msg))
 
     finally:
-        # Garantiza que el evento de control se active para que
-        # cualquier lógica ascendente sepa que algo terminó.
         proc_control_event.set()
         logger.debug("[%s/%s] _stream_reader terminado.", worker_id, stream_name)

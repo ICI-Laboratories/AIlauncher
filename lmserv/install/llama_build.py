@@ -25,8 +25,8 @@ _REPO = "https://github.com/ggerganov/llama.cpp.git"
 def build_llama_cpp(output_dir: str | Path, cuda: bool = True) -> None:  # noqa: D401
     output_dir = Path(output_dir).expanduser().resolve()
     build_dir = output_dir / ("build-cuda" if cuda else "build-cpu")
-    bin_path = build_dir / "bin" / ("llama.exe" if os.name == "nt" else "llama-cli")
-
+    bin_path = build_dir / "bin" / ("llama-cli.exe" if os.name == "nt" else "llama-cli")
+    
     if bin_path.exists():
         print(f"✅  llama.cpp ya compilado en {bin_path}")
         return
@@ -56,7 +56,7 @@ def build_llama_cpp(output_dir: str | Path, cuda: bool = True) -> None:  # noqa:
 # ──────────────────────────────────────────────────────────────────────────────
 def _build_unix(src: Path, build_dir: Path, cuda: bool) -> None:
     env = os.environ.copy()
-    env["LLAMA_CUBLAS"] = "1" if cuda else "0"
+    env["GGML_CUDA"] = "1" if cuda else "0"
 
     print(f"🛠️   make LLAMA_CUBLAS={env['LLAMA_CUBLAS']} -j{os.cpu_count()} …")
     subprocess.run(["make", f"-j{os.cpu_count()}"], cwd=src, env=env, check=True)
@@ -75,7 +75,7 @@ def _build_windows(src: Path, build_dir: Path, cuda: bool) -> None:
         "-B", str(build_dir),
         "-S", str(src),
         "-G", "Ninja",
-        f"-DLLAMA_CUBLAS={'ON' if cuda else 'OFF'}",
+        f"-DGGML_CUDA={'ON' if cuda else 'OFF'}",
         "-DLLAMA_BUILD_TESTS=OFF",
         "-DLLAMA_CURL=OFF",
         "-DCMAKE_BUILD_TYPE=Release",
