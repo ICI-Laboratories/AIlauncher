@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+"""CLI para LMServ completamente corregido.
+
+Principales cambios respecto a la versión anterior
+--------------------------------------------------
+* **No** se definen valores *default* dentro de `typer.Option` **cuando** esos
+  defaults también se pasan en la firma de la función. Así se evita el
+  `TypeError: Option() got multiple values for argument 'default'`.
+* Todas las opciones tienen flags explícitos (`--workers`, `-w`, etc.) para que
+  Click nunca confunda un valor no‐cadena con un *param_decl*.
+"""
+
 import os
 import subprocess
 import sys
@@ -10,45 +21,73 @@ import typer
 
 from .config import Config
 
+###############################################################################
+# CLI raíz
+###############################################################################
+
 cli = typer.Typer(
     add_completion=False,
     help="CLI principal de LMServ. Usa ‘lmserv <comando> --help’ para detalles.",
     no_args_is_help=True,
 )
 
-# --- Definiciones de opciones para el comando 'serve' ---
+###############################################################################
+# Tipos reutilizables de opciones ─────────────────────────────────────────────
+###############################################################################
+
 ModelPathOpt = Annotated[
     Path,
     typer.Option(
-        ...,
+        "--model-path",
+        "-m",
         exists=True,
         dir_okay=False,
         readable=True,
         help="Ruta al modelo .gguf que usarán los workers.",
     ),
 ]
+
 WorkersOpt = Annotated[
     int,
     typer.Option(
-        default=2,
+        "--workers",
+        "-w",
         min=1,
         show_default=True,
         help="Número de procesos llama-cli en paralelo.",
     ),
 ]
+
 HostOpt = Annotated[
-    str, typer.Option(default="0.0.0.0", help="Interfaz en la que escuchará FastAPI.")
+    str,
+    typer.Option(
+        "--host",
+        "-H",
+        help="Interfaz en la que escuchará FastAPI.",
+    ),
 ]
+
 PortOpt = Annotated[
-    int, typer.Option(default=8000, help="Puerto HTTP para el endpoint REST.")
+    int,
+    typer.Option(
+        "--port",
+        "-p",
+        help="Puerto HTTP para el endpoint REST.",
+    ),
 ]
+
 MaxTokOpt = Annotated[
-    int, typer.Option(default=128, help="Límite de tokens a generar por petición.")
+    int,
+    typer.Option(
+        "--max-tokens",
+        help="Límite de tokens a generar por petición.",
+    ),
 ]
+
 LLamaBinOpt = Annotated[
     Optional[Path],
     typer.Option(
-        default=None,
+        "--llama-bin",
         exists=True,
         dir_okay=False,
         writable=False,
@@ -56,16 +95,21 @@ LLamaBinOpt = Annotated[
     ),
 ]
 
+###############################################################################
+# Comando principal: serve
+###############################################################################
+
 @cli.command()
 def serve(
     model_path: ModelPathOpt,
-    workers: WorkersOpt,
-    host: HostOpt,
-    port: PortOpt,
-    max_tokens: MaxTokOpt,
-    llama_bin: LLamaBinOpt,
+    workers: WorkersOpt = 2,
+    host: HostOpt = "0.0.0.0",
+    port: PortOpt = 8000,
+    max_tokens: MaxTokOpt = 128,
+    llama_bin: LLamaBinOpt = None,
 ) -> None:
-    # (El cuerpo de la función no cambia)
+    """Lanza la API REST y los *workers* de llama.cpp."""
+
     env = os.environ.copy()
     env.update(
         {
@@ -81,33 +125,47 @@ def serve(
 
     typer.echo(f"🚀  Levantando LMServ: http://{host}:{port}/chat  (workers={workers})")
     subprocess.run(
-        [sys.executable, "-m", "uvicorn", "lmserv.server.api:app", "--host", host, "--port", str(port)],
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "lmserv.server.api:app",
+            "--host",
+            host,
+            "--port",
+            str(port),
+        ],
         check=True,
         env=env,
     )
 
-# --- Definiciones para los subcomandos 'install' ---
+###############################################################################
+# Sub-comandos de instalación
+###############################################################################
+
 install_app = typer.Typer(
-    help="Sub-comandos para compilar llama.cpp y descargar modelos .gguf."
+    help="Sub-comandos para compilar llama.cpp y descargar modelos .gguf.",
 )
 cli.add_typer(install_app, name="install")
 
-# --- CORRECCIÓN APLICADA A TODAS LAS OPCIONES ---
 OutputDirOpt = Annotated[
     Path,
     typer.Option(
-        default="build/", # CORREGIDO
+        "--output-dir",
+        "-o",
         help="Directorio destino donde quedará la build de llama.cpp.",
     ),
 ]
+
 CudaOpt = Annotated[
     bool,
     typer.Option(
-        default=True, # CORREGIDO
+        "--cuda/--no-cuda",
         help="Compilar con soporte CUDA/cuBLAS.",
-        rich_help_panel="Opciones de Build"
+        rich_help_panel="Opciones de Build",
     ),
 ]
+
 ModelNamesArg = Annotated[
     list[str],
     typer.Argument(
@@ -115,32 +173,59 @@ ModelNamesArg = Annotated[
         help="Nombre corto de modelos a bajar (p.e. ‘gemma-2b’, ‘phi3-mini’).",
     ),
 ]
+
 TargetDirOpt = Annotated[
     Path,
     typer.Option(
-        default=Path("models/"), # CORREGIDO
-        help="Carpeta destino de los .gguf"
+        "--target-dir",
+        "-d",
+        help="Carpeta destino de los .gguf.",
     ),
 ]
 
 @install_app.command("llama")
-def install_llama(output_dir: OutputDirOpt, cuda: CudaOpt) -> None:
+def install_llama(
+    output_dir: OutputDirOpt = Path("build/"),
+    cuda: CudaOpt = True,
+) -> None:
+    """Compila llama.cpp con (o sin) soporte CUDA."""
+
     from .install.llama_build import build_llama_cpp
+
     build_llama_cpp(output_dir, cuda)
     typer.secho("✅  llama.cpp compilado correctamente.", fg=typer.colors.GREEN)
 
 @install_app.command("models")
-def install_models(names: ModelNamesArg, target_dir: TargetDirOpt) -> None:
+def install_models(
+    names: ModelNamesArg,
+    target_dir: TargetDirOpt = Path("models/"),
+) -> None:
+    """Descarga modelos .gguf predefinidos y los guarda en *target_dir*."""
+
     from .install.models_fetch import download_models
+
     download_models(names, target_dir)
     typer.secho("✅  Modelos descargados.", fg=typer.colors.GREEN)
 
-# --- CORRECCIÓN APLICADA AL COMANDO 'discover' ---
-TimeoutOpt = Annotated[int, typer.Option(default=5, help="Segundos de búsqueda.")]
+###############################################################################
+# Descubrimiento de nodos
+###############################################################################
+
+TimeoutOpt = Annotated[
+    int,
+    typer.Option(
+        "--timeout",
+        "-t",
+        help="Segundos de búsqueda.",
+    ),
+]
 
 @cli.command()
-def discover(timeout: TimeoutOpt) -> None:
+def discover(timeout: TimeoutOpt = 5) -> None:
+    """Busca nodos LMServ vía mDNS."""
+
     from .discovery.mdns import discover_nodes
+
     nodes = discover_nodes(timeout=timeout)
     if nodes:
         typer.secho("🌐  Nodos LMServ encontrados:", bold=True)
@@ -149,8 +234,14 @@ def discover(timeout: TimeoutOpt) -> None:
     else:
         typer.secho("🙁  No se detectaron nodos.", fg=typer.colors.YELLOW)
 
+###############################################################################
+# Passthrough a llama-cli
+###############################################################################
+
 @cli.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
 def llama(ctx: typer.Context) -> None:
+    """Reenvía cualquier argumento directamente a `llama-cli`."""
+
     cfg = Config()
     cmd = [str(cfg.llama_bin), *ctx.args]
     try:
@@ -163,13 +254,23 @@ def llama(ctx: typer.Context) -> None:
         )
         raise typer.Exit(1)
 
+###############################################################################
+# Actualizar repositorio
+###############################################################################
+
 @cli.command()
 def update() -> None:
+    """Hace `git pull` y reinstala el paquete en editable."""
+
     typer.echo("🔄  git pull origin main …")
     subprocess.run(["git", "pull", "origin", "main"], check=True)
     typer.echo("🛠️   rebuild (si aplica) …")
     subprocess.run([sys.executable, "-m", "pip", "install", "-e", "."], check=True)
     typer.secho("✅  Proyecto actualizado.", fg=typer.colors.GREEN)
+
+###############################################################################
+# Entry-point
+###############################################################################
 
 def _main() -> None:
     cli()
