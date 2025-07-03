@@ -16,6 +16,7 @@ cli = typer.Typer(
     no_args_is_help=True,
 )
 
+# --- Definiciones de opciones para el comando 'serve' ---
 ModelPathOpt = Annotated[
     Path,
     typer.Option(
@@ -26,33 +27,28 @@ ModelPathOpt = Annotated[
         help="Ruta al modelo .gguf que usarán los workers.",
     ),
 ]
-
 WorkersOpt = Annotated[
     int,
     typer.Option(
-        default=2,  # <-- CORREGIDO
+        default=2,
         min=1,
         show_default=True,
         help="Número de procesos llama-cli en paralelo.",
     ),
 ]
-
 HostOpt = Annotated[
-    str, typer.Option(default="0.0.0.0", help="Interfaz en la que escuchará FastAPI.")  # <-- CORREGIDO
+    str, typer.Option(default="0.0.0.0", help="Interfaz en la que escuchará FastAPI.")
 ]
-
 PortOpt = Annotated[
-    int, typer.Option(default=8000, help="Puerto HTTP para el endpoint REST.")  # <-- CORREGIDO
+    int, typer.Option(default=8000, help="Puerto HTTP para el endpoint REST.")
 ]
-
 MaxTokOpt = Annotated[
-    int, typer.Option(default=128, help="Límite de tokens a generar por petición.")  # <-- CORREGIDO
+    int, typer.Option(default=128, help="Límite de tokens a generar por petición.")
 ]
-
 LLamaBinOpt = Annotated[
     Optional[Path],
     typer.Option(
-        default=None,  # <-- CORREGIDO
+        default=None,
         exists=True,
         dir_okay=False,
         writable=False,
@@ -62,7 +58,6 @@ LLamaBinOpt = Annotated[
 
 @cli.command()
 def serve(
-    # --- La firma de la función ahora usa las anotaciones directamente ---
     model_path: ModelPathOpt,
     workers: WorkersOpt,
     host: HostOpt,
@@ -70,6 +65,7 @@ def serve(
     max_tokens: MaxTokOpt,
     llama_bin: LLamaBinOpt,
 ) -> None:
+    # (El cuerpo de la función no cambia)
     env = os.environ.copy()
     env.update(
         {
@@ -90,57 +86,61 @@ def serve(
         env=env,
     )
 
+# --- Definiciones para los subcomandos 'install' ---
 install_app = typer.Typer(
     help="Sub-comandos para compilar llama.cpp y descargar modelos .gguf."
 )
 cli.add_typer(install_app, name="install")
 
-@install_app.command("llama")
-def install_llama(
-    output_dir: Annotated[
-        Path,
-        typer.Option(
-            "build/",
-            help="Directorio destino donde quedará la build de llama.cpp.",
-        ),
-    ],
-    cuda: Annotated[
-        bool,
-        typer.Option(
-            True,
-            "--cuda/--no-cuda",
-            help="Compilar con soporte CUDA/cuBLAS.",
-        ),
-    ] = True,
-) -> None:
-    from .install.llama_build import build_llama_cpp
+# --- CORRECCIÓN APLICADA A TODAS LAS OPCIONES ---
+OutputDirOpt = Annotated[
+    Path,
+    typer.Option(
+        default="build/", # CORREGIDO
+        help="Directorio destino donde quedará la build de llama.cpp.",
+    ),
+]
+CudaOpt = Annotated[
+    bool,
+    typer.Option(
+        default=True, # CORREGIDO
+        help="Compilar con soporte CUDA/cuBLAS.",
+        rich_help_panel="Opciones de Build"
+    ),
+]
+ModelNamesArg = Annotated[
+    list[str],
+    typer.Argument(
+        ...,
+        help="Nombre corto de modelos a bajar (p.e. ‘gemma-2b’, ‘phi3-mini’).",
+    ),
+]
+TargetDirOpt = Annotated[
+    Path,
+    typer.Option(
+        default=Path("models/"), # CORREGIDO
+        help="Carpeta destino de los .gguf"
+    ),
+]
 
+@install_app.command("llama")
+def install_llama(output_dir: OutputDirOpt, cuda: CudaOpt) -> None:
+    from .install.llama_build import build_llama_cpp
     build_llama_cpp(output_dir, cuda)
     typer.secho("✅  llama.cpp compilado correctamente.", fg=typer.colors.GREEN)
 
 @install_app.command("models")
-def install_models(
-    names: Annotated[
-        list[str],
-        typer.Argument(
-            ...,
-            help="Nombre corto de modelos a bajar (p.e. ‘gemma-2b’, ‘phi3-mini’).",
-        ),
-    ],
-    target_dir: Annotated[
-        Path,
-        typer.Option("models/", help="Carpeta destino de los .gguf"),
-    ] = Path("models/"),
-) -> None:
+def install_models(names: ModelNamesArg, target_dir: TargetDirOpt) -> None:
     from .install.models_fetch import download_models
-
     download_models(names, target_dir)
     typer.secho("✅  Modelos descargados.", fg=typer.colors.GREEN)
 
-@cli.command()
-def discover(timeout: Annotated[int, typer.Option(5, help="Segundos de búsqueda.")] = 5) -> None:
-    from .discovery.mdns import discover_nodes
+# --- CORRECCIÓN APLICADA AL COMANDO 'discover' ---
+TimeoutOpt = Annotated[int, typer.Option(default=5, help="Segundos de búsqueda.")]
 
+@cli.command()
+def discover(timeout: TimeoutOpt) -> None:
+    from .discovery.mdns import discover_nodes
     nodes = discover_nodes(timeout=timeout)
     if nodes:
         typer.secho("🌐  Nodos LMServ encontrados:", bold=True)
@@ -152,7 +152,7 @@ def discover(timeout: Annotated[int, typer.Option(5, help="Segundos de búsqueda
 @cli.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
 def llama(ctx: typer.Context) -> None:
     cfg = Config()
-    cmd = [cfg.llama_bin, *ctx.args]
+    cmd = [str(cfg.llama_bin), *ctx.args]
     try:
         subprocess.run(cmd, check=True)
     except FileNotFoundError:
