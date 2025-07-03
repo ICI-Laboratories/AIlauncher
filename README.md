@@ -1,155 +1,163 @@
-# LMServ · mini-LM Studio
 
-> **lightweight local LLM service – _click-to-run_**  
-> CLI + FastAPI + mDNS discovery · 100 % Python (C++ hot-paths opcionales)
+# LMServ: Lightweight Local LLM Service
 
+LMServ is a powerful yet lightweight service that allows you to run and interact with local language models via a simple command-line interface and a robust API. It is designed for developers and researchers who need a fast, local, and customizable inference server without the overhead of heavy-duty platforms.
 
----
+The service uses `llama.cpp` as its backend engine, providing high-performance inference on both CPU and GPU.
 
-## Tabla de contenidos
-1. [Motivación](#motivación)
-2. [Características](#características)
-3. [Instalación rápida](#instalación-rápida)
-4. [Comandos principales](#comandos-principales)
-5. [Estructura del código](#estructura-del-código)
-6. [Variables de entorno](#variables-de-entorno)
-7. [Roadmap](#roadmap)
-8. [Contribuir](#contribuir)
-9. [Licencia](#licencia)
+\<p align="center"\>
+\<img src="docs/diagram.svg" width="680" alt="Architecture: CLI → FastAPI → WorkerPool → llama-cli" /\>
+\</p\>
 
----
+-----
 
-## Motivación
+## Features
 
-En laboratorios y pymes **no conviene** pagar plataformas cloud para servir modelos
-de lenguaje grandes.  
-LMServ expone una REST API _OpenAI-compatible_ ejecutando `llama.cpp`
-en la GPU/CPU local y descubre automáticamente otros nodos dentro
-de la red (al estilo Ollama o LM Studio).
+  * **Powerful CLI (`Typer`)**: A user-friendly command-line interface to manage all aspects of the service, from installation to serving models.
+  * **High-Performance API (`FastAPI`)**: A fast, asynchronous API endpoint (`/chat`) for streaming token-by-token responses from the language model.
+  * **Concurrent Worker Pool**: Manages multiple `llama.cpp` processes to handle simultaneous requests efficiently.
+  * **Automated Installer**: Includes commands to automatically clone and compile `llama.cpp` with CUDA support, and to download popular GGUF models from a catalog.
+  * **LAN Discovery (`mDNS`)**: Automatically discovers other `LMServ` instances running on the same local network.
+  * **Flexible Configuration**: Configure the service via command-line arguments or environment variables.
 
-<p align="center">
-  <img src="docs/diagram.svg" width="680" alt="Arquitectura básica: CLI → FastAPI → WorkerPool → llama-cli" />
-</p>
+-----
 
----
+## Installation Guide
 
-## Características
+Follow these steps to get `LMServ` up and running on your local machine.
 
-| Módulo | Descripción |
-|--------|-------------|
-| **CLI (Typer)** | `lmserv serve / install / discover / llama …` |
-| **FastAPI** | Endpoint `POST /chat`, streaming token-a-token |
-| **WorkerPool** | Múltiples procesos `llama-cli` reaprovechados |
-| **mDNS discovery** | Anuncia/descubre `_lmserv._tcp.local.` sin configurar |
-| **Instalador** | Compila `llama.cpp` y baja `.gguf` verificados |
-| **Hot-paths C++** | Opcional via `pybind11` (sampling, tokenizer) |
-| **Empaquetado** | PyInstaller one-file + Dockerfile _(pendiente)_ |
-
----
-
-## Instalación rápida
+### Step 1: Clone the Repository
 
 ```bash
-# 1. clonar repositorio
-git clone https://github.com/tu-usuario/lmserv.git(falta!)
-cd lmserv
+git clone https://github.com/ICI-Laboratories/AIlauncher.git
+cd AIlauncher
+```
 
-# 2. entorno Python 3.10+
-python -m venv env && source env/bin/activate
-pip install -U pip wheel && pip install -e .
+### Step 2: Set Up a Virtual Environment
 
-# 3. compilar llama.cpp (CUDA por defecto)
-lmserv install llama --output-dir build/
-
-# 4. descargar modelo de prueba
-lmserv install models gemma-2b --target-dir models/
-````
-
----
-
-## Comandos principales
+It's highly recommended to use a virtual environment to manage dependencies.
 
 ```bash
-# lanzar API + 3 workers (http://localhost:8000/chat)
-lmserv serve --model-path models/gemma-2b.gguf --workers 3
+# Create the environment
+python -m venv env
 
-# listar nodos LMServ en la LAN
-lmserv discover --timeout 3
+# Activate it (Windows)
+env\Scripts\activate
 
-# invocar directamente llama-cli con cualquier flag
-lmserv llama --help
+# Activate it (Linux/macOS)
+# source env/bin/activate
 ```
 
----
+### Step 3: Install Dependencies
 
-## Estructura del código
+Install the project and its Python dependencies. The `-e .` command installs it in "editable" mode.
 
-```
-lmserv/
-├── cli.py                ← entrada Typer
-├── config.py             ← configuración central (ENV + sane defaults)
-├── server/               ← API, seguridad y workers
-│   ├── api.py
-│   ├── pool.py
-│   ├── security.py
-│   └── workers/
-│       ├── llama.py      ← proceso externo llama-cli
-│       ├── utils.py
-│       └── cpp_bridge.py ← bindings opcionales C++
-├── discovery/            ← mDNS + registro en memoria
-├── install/              ← build de llama.cpp + fetch de modelos
-└── docs/                 ← diagramas y documentación de alto nivel
-tests/                    ← (pendiente) pytest-asyncio
+```bash
+pip install -e .
 ```
 
-Cada sub-carpeta incluye su propio **README.md** con cambios
-recientes y tareas pendientes.
+### Step 4: Compile `llama.cpp`
 
----
+This command clones the `llama.cpp` repository into a `build/` directory and compiles the necessary binaries. It will attempt to build with CUDA support by default.
 
-## Variables de entorno
+```bash
+python -m lmserv.cli install llama --output-dir build/
+```
 
-| Variable     | Valor por defecto   | Uso                     |
-| ------------ | ------------------- | ----------------------- |
-| `MODEL_PATH` | `models/gemma.gguf` | Ruta al modelo          |
-| `WORKERS`    | `2`                 | Nº procesos llama-cli   |
-| `HOST`       | `0.0.0.0`           | Interfaz FastAPI        |
-| `PORT`       | `8000`              | Puerto HTTP             |
-| `API_KEY`    | `changeme`          | Token simple de acceso  |
-| `MAX_TOKENS` | `128`               | Límite de generación    |
-| `LLAMA_BIN`  | *(auto-detect)*     | Ejecutable llama-cli    |
-| `LOG_LEVEL`  | `INFO`              | Nivel global de logging |
+### Step 5: Download a Model
 
----
+You can use a model you already have, or download one from the built-in catalog.
 
-## Roadmap
+```bash
+# Example: Download the gemma-2b model
+python -m lmserv.cli install models gemma-2b --target-dir models/
+```
 
-* [x] Refactor ✂︎ archivos ≤ 300 líneas
-* [ ] PyInstaller one-file (`dist/`)
-* [ ] Dockerfile con soporte GPU (`--gpus all`)
-* [ ] Selector de modelo según VRAM/CPU
-* [ ] Benchmarks automáticos en CI
-* [ ] Autenticación mTLS opcional
-* [ ] UI web minimal (React + shadcn)
+-----
 
----
+## How to Run the Server
 
-## Contribuir
+Once everything is installed, you can start the API server. You must provide the path to your model file and the path to the compiled `llama-cli.exe` binary.
 
-1. Crea un *fork* y una rama descriptiva `feat/nombre-claro`.
-2. Asegúrate de que **ruff**, **black** y **pytest** pasen:
+```bash
+python -m lmserv.cli serve --model-path "path/to/your/model.gguf" --llama-bin "path/to/your/build/build-cuda/bin/llama-cli.exe"
+```
 
-   ```bash
-   ruff check . && black --check . && pytest -q
-   ```
-3. Abre un Pull Request; revisaremos en menos de 48 h.
+**Example:**
 
-Para grandes cambios abre primero una *issue* para coordinar esfuerzos.
+```bash
+python -m lmserv.cli serve --model-path "D:\lmmodels\gemma-3-1b-it-GGUF\gemma-3-1b-it-Q8_0.gguf" --llama-bin "C:\Users\pedro\Documents\GitHub\AIlauncher\build\build-cuda\bin\llama-cli.exe"
+```
 
----
+The server will start and be available at `http://localhost:8000`.
 
-## Licencia
+-----
 
-MIT © 2024 — Tu Nombre / Colaboradores
-Ver `LICENSE` para más detalles.
+## Command Reference
 
+### `serve`
+
+Starts the main API server.
+
+  * `--model-path, -m`: (Required) Path to the `.gguf` model file.
+  * `--llama-bin`: (Required) Path to the compiled `llama-cli` executable.
+  * `--workers, -w`: Number of parallel worker processes (default: 2).
+  * `--host, -H`: Host interface to listen on (default: `0.0.0.0`).
+  * `--port, -p`: Port to listen on (default: 8000).
+  * `--max-tokens`: Default maximum tokens for generation (default: 128).
+
+### `install`
+
+Contains sub-commands for installation tasks.
+
+  * **`install llama`**: Compiles `llama.cpp`.
+      * `--output-dir, -o`: Directory to store the build (default: `build/`).
+      * `--cuda / --no-cuda`: Compile with or without CUDA support (default: `--cuda`).
+  * **`install models`**: Downloads models from the catalog.
+      * `names...`: One or more model names to download (e.g., `gemma-2b`, `phi3-mini`).
+      * `--target-dir, -d`: Directory to save the models (default: `models/`).
+
+### `discover`
+
+Searches for other `LMServ` nodes on the local network.
+
+  * `--timeout, -t`: Seconds to search for nodes (default: 5).
+
+### `llama`
+
+A direct passthrough to the `llama-cli` executable. Allows you to run any `llama-cli` command directly.
+
+**Example:**
+
+```bash
+python -m lmserv.cli llama --version
+```
+
+### `update`
+
+Pulls the latest changes from the Git repository and reinstalls the package.
+
+-----
+
+## API Usage
+
+You can interact with the server by sending `POST` requests to the `/chat` endpoint.
+
+**Example using `curl`:**
+
+```bash
+curl -X POST http://localhost:8000/chat \
+-H "Content-Type: application/json" \
+-H "X-API-Key: changeme" \
+-d '{
+    "prompt": "Tell me a short story about a robot who learns to dream.",
+    "system_prompt": "You are a master storyteller.",
+    "temperature": 0.9
+}'
+```
+
+**Example using the interactive client (`pruebas.py`):**
+
+```bash
+python pruebas.py
+```
