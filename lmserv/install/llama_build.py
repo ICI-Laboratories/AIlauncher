@@ -77,9 +77,10 @@ def _build_windows(src: Path, build_dir: Path, cuda: bool) -> None:
         "-G", "Ninja",
         f"-DLLAMA_CUBLAS={'ON' if cuda else 'OFF'}",
         "-DLLAMA_BUILD_TESTS=OFF",
+        "-DLLAMA_CURL=OFF",
         "-DCMAKE_BUILD_TYPE=Release",
     ]
     print("🛠️  ", " ".join(cmake_args))
     subprocess.run(cmake_args, check=True)
 
-    subprocess.run(["cmake", "--build", str(build_dir), "--config", "Release", "-j"], check=True)
+    subprocess.run(["cmake", "--build", str(build_dir), "--config", "Release"], check=True)
