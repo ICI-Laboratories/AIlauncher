@@ -4,40 +4,39 @@ lmserv.server.pool
 Orquestrador **asíncrono** de workers `llama-cli`.
 """
 from __future__ import annotations
-
 import asyncio
 import logging
-from collections.abc import Iterable
-from typing import Final
-
 from ..config import Config
 from .workers.llama import LlamaWorker
 
 logger = logging.getLogger(__name__)
 
 class WorkerPool:
-    """Pool FIFO que reutiliza procesos `llama-cli`."""
-    _START_TIMEOUT_S: Final[float] = 60.0
-
+    """
+    Pool que gestiona un número finito de procesos `llama-cli` persistentes.
+    """
     def __init__(self, cfg: Config) -> None:
         self._cfg = cfg
-        self._workers: list[LlamaWorker] = [LlamaWorker(cfg) for _ in range(cfg.workers)]
+        self._workers: list[LlamaWorker] = []
         self.free: asyncio.Queue[LlamaWorker] = asyncio.Queue()
         self.busy: set[LlamaWorker] = set()
-        self._started = False
+        print("DEBUG [POOL]: Stateful WorkerPool created.")
 
     async def start(self) -> None:
-        if self._started:
-            logger.warning("WorkerPool.start() llamado dos veces; se ignora.")
-            return
-        async def _spawn(w: LlamaWorker) -> None:
-            await w.spawn()
-            await self.free.put(w)
-        await asyncio.gather(*[_spawn(w) for w in self._workers])
-        self._started = True
-        logger.info("WorkerPool: %s workers en marcha.", len(self._workers))
+        """Lanza todos los procesos `llama-cli` y los añade al pool."""
+        self._workers = [LlamaWorker(self._cfg) for _ in range(self._cfg.workers)]
+        try:
+            await asyncio.gather(*[w.spawn() for w in self._workers])
+            for w in self._workers:
+                await self.free.put(w)
+            logger.info("WorkerPool: %s workers persistentes en marcha.", len(self._workers))
+        except Exception as e:
+            logger.error(f"Failed to start workers: {e}")
+            await self.shutdown() # Cleanup on failure
+            raise
 
     async def shutdown(self) -> None:
+        """Detiene todos los procesos worker."""
         logger.info("WorkerPool.shutdown() …")
         await asyncio.gather(*[w.stop() for w in self._workers], return_exceptions=True)
         self._workers.clear()
@@ -47,36 +46,30 @@ class WorkerPool:
             except asyncio.QueueEmpty:
                 break
         self.busy.clear()
-        self._started = False
         logger.info("WorkerPool terminado.")
 
     async def acquire(self) -> LlamaWorker:
-        """Obtiene un worker libre (FIFO)."""
-        w = await self.free.get()
-        self.busy.add(w)
-        return w
+        """Toma un worker de la cola, esperando si es necesario."""
+        worker = await self.free.get()
+        self.busy.add(worker)
+        return worker
 
-    async def release(self, w: LlamaWorker) -> None:
-        """Devuelve un worker al pool. Si el proceso ha muerto, lo reemplaza."""
-        # A worker is only unstable if its underlying process has actually died.
-        if w.proc is None or w.proc.poll() is not None:
-            logger.warning("Worker %s inestable; respawn …", w.id)
+    async def release(self, worker: LlamaWorker) -> None:
+        """
+        Devuelve un worker a la cola. Si el proceso ha muerto, lo reemplaza.
+        """
+        if worker.proc is None or worker.proc.poll() is not None:
+            logger.warning(f"Worker {worker.id} is unstable; respawning…")
+            self.busy.remove(worker)
             try:
-                await w.stop()
-            except Exception as exc:
-                logger.exception("Error parando worker %s: %s", w.id, exc)
-            new_w = LlamaWorker(self._cfg)
-            await new_w.spawn()
-            w = new_w
-        if w in self.busy:
-            self.busy.remove(w)
-        await self.free.put(w)
-
-    @property
-    def size(self) -> int:
-        return len(self._workers)
-
-    def __iter__(self) -> Iterable[LlamaWorker]:
-        return iter(self._workers)
-
-__all__ = ["WorkerPool"]
+                await worker.stop()
+            except Exception as e:
+                logger.error(f"Error stopping unstable worker {worker.id}: {e}")
+            
+            new_worker = LlamaWorker(self._cfg)
+            await new_worker.spawn()
+            await self.free.put(new_worker)
+        else:
+            if worker in self.busy:
+                self.busy.remove(worker)
+            await self.free.put(worker)

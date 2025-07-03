@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, StreamingResponse
@@ -15,56 +15,55 @@ from .security import api_key_auth
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Maneja el inicio y apagado de los recursos de la aplicación."""
-    # Attach config and pool to the application's state
     app.state.config = Config()
     app.state.pool = WorkerPool(app.state.config)
     await app.state.pool.start()
-    
-    yield  # La aplicación está disponible aquí
-    
-    # Código que se ejecuta al apagar
+    yield
     if app.state.pool:
         await app.state.pool.shutdown()
 
 app = FastAPI(
     title="LMServ – mini-LM Studio",
-    version=Config().__version__ if hasattr(Config, "__version__") else "dev",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
 class ChatRequest(BaseModel):
-    prompt: str = Field(..., description="Texto del usuario")
-    max_tokens: int | None = Field(None, ge=1, description="Sobrescribe límite")
+    prompt: str = Field(..., description="Texto del usuario para la inferencia.")
+    system_prompt: Optional[str] = Field(None, description="Instrucción a nivel de sistema para el modelo.")
+    max_tokens: Optional[int] = Field(None, ge=1, description="Límite máximo de tokens a generar.")
+    temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="Controla la aleatoriedad. Más alto = más creativo.")
+    top_p: Optional[float] = Field(None, ge=0.0, le=1.0, description="Muestreo Nucleus.")
+    repeat_penalty: Optional[float] = Field(None, ge=0.0, description="Penaliza la repetición de tokens.")
 
 @app.get("/health", response_class=PlainTextResponse)
 async def health(request: Request) -> str:
-    """Retorna “ok” + número de workers libres."""
     pool: WorkerPool = request.app.state.pool
-    free = pool.free.qsize() if pool else 0
-    return f"ok – workers idle: {free}"
+    return f"ok – workers idle: {pool.free.qsize()}"
 
 @app.post("/chat", dependencies=[Depends(api_key_auth)])
 async def chat(request: Request, req: ChatRequest) -> StreamingResponse:
-    """Genera texto via `llama-cli` y hace *streaming* progresivo."""
+    """Genera texto via `llama-cli` con parámetros personalizables."""
     pool: WorkerPool = request.app.state.pool
-    if not pool:
-        raise HTTPException(status_code=503, detail="Worker pool not ready")
-
     worker = await pool.acquire()
 
     async def _stream() -> AsyncIterator[str]:
         try:
-            async for token in worker.infer(req.prompt):
+            # Pass all parameters from the request to the worker
+            async for token in worker.infer(
+                prompt=req.prompt,
+                system_prompt=req.system_prompt,
+                max_tokens=req.max_tokens,
+                temperature=req.temperature,
+                top_p=req.top_p,
+                repeat_penalty=req.repeat_penalty,
+            ):
                 yield token
         finally:
             await pool.release(worker)
 
-    return StreamingResponse(_stream(), media_type="text/plain")
+    return StreamingResponse(_stream(), media_type="text/plain; charset=utf-8")
 
 @app.get("/", response_class=PlainTextResponse, include_in_schema=False)
 def root() -> str:
-    return (
-        "LMServ – mini-LM Studio 🌸\n"
-        "POST /chat   with JSON {prompt, max_tokens}\n"
-        "GET /health  for status\n"
-    )
+    return "LMServ is running."

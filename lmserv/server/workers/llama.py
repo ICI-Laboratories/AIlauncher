@@ -18,7 +18,7 @@ from .utils import _stream_reader
 logger = logging.getLogger(__name__)
 
 READY_MARKER = "== Running in interactive mode. =="
-REVERSE_PROMPT = "<|LMSERV_USER_INPUT_START|>"
+REVERSE_PROMPT = "<|LMSERV_USER_INPUT_START|>" # This is no longer used to break the loop
 
 class LlamaWorker:
     """Un proceso `llama-cli`."""
@@ -67,7 +67,7 @@ class LlamaWorker:
             if READY_MARKER in line:
                 return
 
-    async def infer(self, prompt: str) -> AsyncIterator[str]:
+    async def infer(self, prompt: str, **kwargs) -> AsyncIterator[str]:
         if not self.proc or self.proc.poll() is not None:
             raise RuntimeError(f"[{self.id}] worker no operativo")
         assert self.proc.stdin and self._queue
@@ -77,28 +77,40 @@ class LlamaWorker:
         while not self._queue.empty():
             try: self._queue.get_nowait()
             except asyncio.QueueEmpty: break
-        
-        # --- THIS IS THE FIX ---
-        # Use the correct newline sequence for the current OS.
-        self.proc.stdin.write(prompt.strip() + os.linesep)
-        # --- END FIX ---
+
+        full_input = f"{prompt.strip()}{os.linesep}"
+        print(f"DEBUG [WORKER {self.id}]: Sending input: {full_input!r}")
+        self.proc.stdin.write(full_input)
         self.proc.stdin.flush()
-        
+
         first_token = True
         try:
             while not self._ctl_event.is_set():
-                stream, line = await self._queue.get()
-                if line is None or (isinstance(line, str) and line.startswith("ERROR_READER")):
-                    break
-                if stream == "stderr":
-                    continue
-                if first_token and line.strip() == prompt.strip():
-                    continue
-                if line.strip() == REVERSE_PROMPT:
-                    break
-                first_token = False
-                yield line
+                try:
+                    # --- THIS IS THE FIX ---
+                    # Wait for a new line, but with a timeout.
+                    # If the model stops talking for 2 seconds, we assume it's done.
+                    stream, line = await asyncio.wait_for(self._queue.get(), timeout=2.0)
+                    # --- END FIX ---
+                    
+                    print(f"DEBUG [WORKER {self.id}]: Received line: {line!r} from {stream}")
+
+                    if line is None or (isinstance(line, str) and line.startswith("ERROR_READER")):
+                        break
+                    if stream == "stderr":
+                        continue
+                    if first_token and line.strip() == prompt.strip():
+                        continue
+                    # The reverse prompt check is now a secondary stop condition, not the primary one.
+                    if line.strip() == REVERSE_PROMPT:
+                        break
+                    first_token = False
+                    yield line
+                except asyncio.TimeoutError:
+                    print(f"DEBUG [WORKER {self.id}]: Timeout waiting for queue item. Assuming end of generation.")
+                    break # Exit the loop if the model is silent
         finally:
+            print(f"DEBUG [WORKER {self.id}]: Exiting infer loop.")
             self._ctl_event.set()
 
     async def stop(self) -> None:
