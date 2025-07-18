@@ -23,3 +23,8 @@ test = [
 
 [project.scripts]
 lmserv = "lmserv.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lmserv*"]
+exclude = ["models*"]

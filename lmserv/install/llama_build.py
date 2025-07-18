@@ -22,7 +22,25 @@ from pathlib import Path
 _REPO = "https://github.com/ggerganov/llama.cpp.git"
 
 
+def _check_for_cmake() -> None:
+    """Verifica que CMake esté instalado y, si no, da instrucciones y sale."""
+    if not shutil.which("cmake"):
+        print("❌ Error: CMake no se encontró en tu sistema.", file=sys.stderr)
+        print("   Es un requisito para compilar llama.cpp en Windows.", file=sys.stderr)
+        print("\n   Para instalarlo, sigue estos pasos:", file=sys.stderr)
+        print("   1. Descarga el instalador desde: https://cmake.org/download/", file=sys.stderr)
+        print("   2. Durante la instalación, asegúrate de marcar la opción 'Add CMake to the system PATH'.", file=sys.stderr)
+        
+        sys.exit(1)
+    else:
+        print("✅ CMake está instalado y disponible en el PATH.")
+
+
 def build_llama_cpp(output_dir: str | Path, cuda: bool = True) -> None:  # noqa: D401
+    """
+    Compila llama.cpp de forma no-interactiva, verificando dependencias.
+    Es idempotente: si el binario ya existe, omite la compilación.
+    """
     output_dir = Path(output_dir).expanduser().resolve()
     build_dir = output_dir / ("build-cuda" if cuda else "build-cpu")
     bin_path = build_dir / "bin" / ("llama-cli.exe" if os.name == "nt" else "llama-cli")
@@ -39,16 +57,20 @@ def build_llama_cpp(output_dir: str | Path, cuda: bool = True) -> None:  # noqa:
         subprocess.run(["git", "clone", "--depth", "1", _REPO, str(output_dir)], check=True)
 
     # ------------------------------------------------------------ #
-    # Elegir backend
+    # Elegir backend de compilación según el SO
     # ------------------------------------------------------------ #
     sysname = platform.system()
     if sysname == "Windows":
+        # En Windows, verificar y luego usar CMake
+        _check_for_cmake()
         _build_windows(output_dir, build_dir, cuda)
-    else:  # Linux o macOS
+    else:
+        # En Linux o macOS, usar Make
         _build_unix(output_dir, build_dir, cuda)
 
     if not bin_path.exists():
-        raise RuntimeError("Compilación completó pero no se encontró el binario llama-cli")
+        raise RuntimeError("La compilación completó pero no se encontró el binario llama-cli")
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────

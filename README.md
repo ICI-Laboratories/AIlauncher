@@ -41,8 +41,10 @@ It's highly recommended to use a virtual environment to manage dependencies.
 # Create the environment
 python -m venv env
 
+pip install -r requirements.txt
+
 # Activate it (Windows)
-env\Scripts\activate
+.env\Scripts\activate
 
 # Activate it (Linux/macOS)
 # source env/bin/activate
@@ -59,6 +61,8 @@ pip install -e .
 ### Step 4: Compile `llama.cpp`
 
 This command clones the `llama.cpp` repository into a `build/` directory and compiles the necessary binaries. It will attempt to build with CUDA support by default.
+
+If is not working whithin the vsc terminal you should use x64 Native Tools
 
 ```bash
 python -m lmserv.cli install llama --output-dir build/
