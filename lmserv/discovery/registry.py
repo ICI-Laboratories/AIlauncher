@@ -1,3 +1,4 @@
+# lmserv/discovery/registry.py
 from __future__ import annotations
 import threading
 import time

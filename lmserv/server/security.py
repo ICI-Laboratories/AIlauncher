@@ -1,16 +1,4 @@
-"""
-lmserv.server.security
-======================
-
-Pequeña capa de seguridad para el API:
-
-1. **API-Key header** obligatorio (‵X-API-Key‵).
-2. **CORS** relax por defecto solo a la sub-red local.
-3. *Hooks* listos para añadir **rate-limit** o mTLS sin tocar `api.py`.
-
-Al mantener todo aquí, el resto del código del servidor permanece
-limpio y libre de detalles de autenticación.
-"""
+# lmserv/server/security.py
 from __future__ import annotations
 
 import ipaddress

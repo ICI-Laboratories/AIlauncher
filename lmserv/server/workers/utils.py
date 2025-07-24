@@ -1,15 +1,4 @@
-"""
-lmserv.server.workers.utils
-===========================
-
-Funciones utilitarias compartidas por las distintas clases *Worker*.
-
-Por ahora se limita a:
-
-* `_stream_reader` – corrutina que lee un `TextIO` (stdout/stderr)
-  y “empuja” líneas a una `asyncio.Queue` en cuanto llegan
-  (útil para _streaming_ token-a-token).
-"""
+# lmserv/server/workers/utils.py
 from __future__ import annotations
 
 import asyncio

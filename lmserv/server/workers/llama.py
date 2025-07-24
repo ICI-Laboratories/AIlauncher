@@ -1,7 +1,4 @@
-"""
-lmserv.server.workers.llama
-===========================
-"""
+# lmserv/server/workers/llama.py
 from __future__ import annotations
 import asyncio
 import logging

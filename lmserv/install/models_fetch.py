@@ -1,3 +1,5 @@
+# lmserv/install/models_fetch.py
+
 from __future__ import annotations
 import hashlib
 import os
@@ -10,8 +12,8 @@ import requests
 from tqdm.auto import tqdm
 
 _CATALOG: dict[str, Tuple[str, str]] = {
-    "gemma-2b": (
-        "https://huggingface.co/google/gemma-2b-it-GGUF/resolve/main/gemma-2b-it-q4_0.gguf",
+    "gemma-3-12b-it-GGUF": (
+        "https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q8_0.gguf?download=true",
         "3e85f7a1d0e6a4acaf7dc8e0e73de79099d32e905e8da3dfd5b0e353e1acf4ad",
     ),
     "phi3-mini": (

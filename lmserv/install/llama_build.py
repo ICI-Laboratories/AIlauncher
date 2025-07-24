@@ -1,16 +1,4 @@
-"""
-lmserv.install.llama_build
-==========================
-
-Compila **llama.cpp** de forma *no-interactiva* para Linux, macOS y Windows.
-
-• Bajo Linux/macOS usa **make** con las flags correctas (CUDA opcional).
-• En Windows se invoca **CMake + Ninja + MSVC**. Si CMake no está instalado,
-  intenta descargarlo y usarlo automáticamente.
-
-La función `build_llama_cpp(output_dir, cuda=True)` es idempotente:
-si ya existe el binario en *output_dir/bin/llama-cli* se omite el build.
-"""
+# lmserv/install/llama_build.py
 from __future__ import annotations
 
 import os

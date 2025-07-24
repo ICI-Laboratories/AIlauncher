@@ -1,8 +1,4 @@
-"""
-lmserv.server.pool
-==================
-Orquestrador **asíncrono** de workers `llama-cli`.
-"""
+# lmserv/server/pool.py
 from __future__ import annotations
 import asyncio
 import logging
