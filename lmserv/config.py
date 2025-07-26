@@ -1,8 +1,4 @@
-"""
-Configuración central de LMServ
-===============================
-... (file content is the same as the original) ...
-"""
+# lmserv/config.py
 
 from __future__ import annotations
 

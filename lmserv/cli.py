@@ -1,16 +1,6 @@
+# lmserv/cli.py
+
 from __future__ import annotations
-
-"""CLI para LMServ completamente corregido.
-
-Principales cambios respecto a la versión anterior
---------------------------------------------------
-* **No** se definen valores *default* dentro de `typer.Option` **cuando** esos
-  defaults también se pasan en la firma de la función. Así se evita el
-  `TypeError: Option() got multiple values for argument 'default'`.
-* Todas las opciones tienen flags explícitos (`--workers`, `-w`, etc.) para que
-  Click nunca confunda un valor no‐cadena con un *param_decl*.
-"""
-
 import os
 import subprocess
 import sys

@@ -1,11 +1,5 @@
-"""
-LMServ – mini-LM Studio
-=======================
+# lmserv/__init__.py
 
-Paquete raíz.  Mantiene metadatos de la distribución y expone algunos
-utilidades de alto nivel sin cargar toda la aplicación (evita ciclos
-de importación innecesarios).
-"""
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
