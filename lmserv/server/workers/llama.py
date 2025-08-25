@@ -16,7 +16,6 @@ from .utils import _stream_reader
 
 logger = logging.getLogger(__name__)
 
-# Marcadores que indican que llama-cli ya está listo en modo interactivo
 READY_MARKERS = (
     "== Running in interactive mode. ==",
     "interactive mode",
@@ -49,7 +48,7 @@ def _default_ngl_for_vram(vram_mb: int) -> int:
         return 20
     if vram_mb < 20_000:
         return 35
-    return 50  # 24 GB+
+    return 50
 
 
 class LlamaWorker:
@@ -66,7 +65,6 @@ class LlamaWorker:
 
     async def spawn(self) -> None:
         """Lanza `llama-cli` con el modelo indicado (local o remoto HF)."""
-        # ── Selección de modelo: remoto (HF) vs local ──
         model_identifier = self.cfg.model
         if _looks_like_hf_repo(model_identifier):
             repo = _strip_hf_prefix(model_identifier)
@@ -75,27 +73,18 @@ class LlamaWorker:
         else:
             p = Path(model_identifier)
             if not p.exists():
-                logger.error("[%s] Ruta al modelo local no existe: %s", self.id, model_identifier)
                 raise FileNotFoundError(f"Modelo local no encontrado en {model_identifier}")
             logger.info("[%s] Usando modelo local: %s", self.id, model_identifier)
             model_arg = ["-m", str(p)]
 
-        # ── Flags de GPU ──
         ngl = int(os.getenv("NGPU_LAYERS", _default_ngl_for_vram(self.cfg.vram_cap_mb)))
         gpu_flags: list[str] = ["-ngl", str(ngl)]
         if self.cfg.gpu_idx:
-            gpu_flags += ["-mg", str(self.cfg.gpu_idx)]  # Main GPU
+            gpu_flags += ["-mg", str(self.cfg.gpu_idx)]
 
-        # ── Comando final ──
         cmd = [
-            self.cfg.llama_bin,
-            *model_arg,
-            "-i",
-            "--interactive-first",
-            "-n",
-            str(self.cfg.max_tokens),
-            "--reverse-prompt",
-            REVERSE_PROMPT,
+            self.cfg.llama_bin, *model_arg, "-i", "--interactive-first",
+            "-n", str(self.cfg.max_tokens), "--reverse-prompt", REVERSE_PROMPT,
             *gpu_flags,
         ]
 
@@ -105,16 +94,10 @@ class LlamaWorker:
         preexec = os.setsid if os.name != "nt" else None
 
         self.proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            encoding="utf-8",
-            errors="replace",
-            creationflags=creation_flags,
-            preexec_fn=preexec,
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, bufsize=1,
+            encoding="utf-8", errors="replace",
+            creationflags=creation_flags, preexec_fn=preexec,
         )
 
         self._queue = asyncio.Queue()
@@ -125,57 +108,51 @@ class LlamaWorker:
             _stream_reader(self.proc.stderr, self._queue, self.id, "stderr", self._ctl_event)
         )
 
-        # La primera ejecución con -hf puede descargar el modelo: damos margen amplio
         try:
             await asyncio.wait_for(self._wait_ready(), timeout=600)
         except asyncio.TimeoutError:
-            raise RuntimeError(
-                f"[{self.id}] llama-cli no respondió en 10 minutos. La descarga/arranque del modelo pudo haber fallado."
-            )
+            raise RuntimeError(f"[{self.id}] llama-cli no respondió en 10 minutos.")
+        
         logger.info("[%s] listo para inferencia.", self.id)
 
     async def _wait_ready(self) -> None:
         """Espera hasta ver un marcador de 'ready' o falla si el proceso muere."""
         assert self._queue and self.proc
         while True:
-            # Fail-fast si el proceso terminó prematuramente
             rc = self.proc.poll()
             if rc is not None:
-                # Intenta extraer algo de stderr para diagnóstico
                 err_tail: list[str] = []
                 try:
-                    for _ in range(200):  # drenar hasta ~200 líneas recientes si están en la cola
+                    for _ in range(200):
                         stream, line = self._queue.get_nowait()
                         if stream == "stderr" and line:
                             err_tail.append(line.strip())
                 except asyncio.QueueEmpty:
                     pass
                 msg = "\n".join(err_tail[-40:]) if err_tail else "(sin stderr)"
-                raise RuntimeError(
-                    f"[{self.id}] llama-cli terminó prematuramente (rc={rc}). "
-                    f"Últimas líneas de stderr:\n{msg}"
-                )
+                raise RuntimeError(f"[{self.id}] llama-cli terminó prematuramente (rc={rc}).\n{msg}")
 
-            stream, line = await self._queue.get()
+            _, line = await self._queue.get()
             if line is None:
                 raise RuntimeError(f"[{self.id}] llama-cli finalizó prematuramente")
-            if stream != "stderr" and any(marker in line for marker in READY_MARKERS):
+            
+            # --- INICIO DE LA CORRECCIÓN ---
+            # El marcador puede aparecer tanto en stdout como en stderr.
+            # Eliminamos la condición 'stream != "stderr"'.
+            if any(marker in line for marker in READY_MARKERS):
                 return
+            # --- FIN DE LA CORRECCIÓN ---
 
     async def infer(self, prompt: str, **kwargs) -> AsyncIterator[str]:
-        """Envía un prompt y *streamea* los tokens de salida."""
         if not self.proc or self.proc.poll() is not None:
             raise RuntimeError(f"[{self.id}] worker no operativo")
         assert self.proc.stdin and self._queue
 
         self._ctl_event.clear()
 
-        # Vacía el buffer antes de escribir
         while not self._queue.empty():
-            try:
-                self._queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
+            try: self._queue.get_nowait()
+            except asyncio.QueueEmpty: break
 
         full_input = f"{prompt.strip()}{os.linesep}"
         self.proc.stdin.write(full_input)
@@ -188,14 +165,9 @@ class LlamaWorker:
                     stream, line = await asyncio.wait_for(self._queue.get(), timeout=2.0)
                     if line is None or (isinstance(line, str) and line.startswith("ERROR_READER")):
                         break
-                    if stream == "stderr":
-                        continue
-                    # filtra el eco del prompt
-                    if first_token and line.strip() == prompt.strip():
-                        continue
-                    # fin de turno cuando aparece el reverse prompt
-                    if line.strip() == REVERSE_PROMPT:
-                        break
+                    if stream == "stderr": continue
+                    if first_token and line.strip() == prompt.strip(): continue
+                    if line.strip() == REVERSE_PROMPT: break
                     first_token = False
                     yield line
                 except asyncio.TimeoutError:
@@ -204,13 +176,11 @@ class LlamaWorker:
             self._ctl_event.set()
 
     async def stop(self) -> None:
-        """Detiene con cuidado el proceso y limpia tareas lectoras."""
-        if not self.proc:
-            return
+        if not self.proc: return
         self._ctl_event.set()
         for task in (self._stdout_task, self._stderr_task):
-            if task and not task.done():
-                task.cancel()
+            if task and not task.done(): task.cancel()
+        
         try:
             sig = signal.CTRL_C_EVENT if os.name == "nt" else signal.SIGINT
             self.proc.send_signal(sig)
@@ -222,5 +192,6 @@ class LlamaWorker:
             except (subprocess.TimeoutExpired, ProcessLookupError):
                 self.proc.kill()
                 await asyncio.to_thread(self.proc.wait)
+        
         logger.info("[%s] proceso %s detenido (RC=%s)", self.id, self.proc.pid, self.proc.returncode)
         self.proc = None

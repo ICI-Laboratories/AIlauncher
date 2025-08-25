@@ -22,7 +22,7 @@ cli = typer.Typer(
 # ───────────────── Opciones ─────────────────
 
 ModelOpt = Annotated[
-    str,  # string general: ruta local .gguf o repo de HF (owner/repo[:variant])
+    str,
     typer.Option(
         "--model",
         "-m",
@@ -58,14 +58,9 @@ def _with_windows_ext(p: Path) -> Path:
     return p
 
 def _default_rel_llama() -> Path:
-    # …/lmserv/ → subir a raíz del proyecto y usar build/bin/llama-cli
     return Path(__file__).resolve().parent / "build" / "bin" / "llama-cli"
 
 def _resolve_llama_bin_from_opts_or_env(llama_bin_opt: Optional[Path]) -> str:
-    """
-    Resuelve una ruta ejecutable a llama-cli sin requerir Config (evita exigir MODEL).
-    Orden: parámetro --llama-bin → $PATH → ruta relativa build/bin/llama-cli.
-    """
     candidates: list[Path] = []
 
     if llama_bin_opt:
@@ -108,7 +103,7 @@ def serve(
     env = os.environ.copy()
     env.update(
         {
-            "MODEL": model,          # requerido por Config
+            "MODEL": model,
             "WORKERS": str(workers),
             "HOST": host,
             "PORT": str(port),
@@ -125,7 +120,6 @@ def serve(
         env=env,
     )
 
-# Subcomandos de instalación
 install_app = typer.Typer(help="Sub-comandos para compilar llama.cpp.")
 cli.add_typer(install_app, name="install")
 
@@ -145,10 +139,10 @@ def install_llama(
 ) -> None:
     """Compila llama.cpp con (o sin) soporte CUDA."""
     from .install.llama_build import build_llama_cpp
-    build_llama_cpp(output_dir, cuda)
+    # --- INICIO DE LA CORRECCIÓN ---
+    build_llama_cpp(output_dir, cuda=cuda)
+    # --- FIN DE LA CORRECCIÓN ---
     typer.secho("✅  llama.cpp compilado correctamente.", fg=typer.colors.GREEN)
-
-# NOTA: el antiguo 'install models' fue eliminado a propósito.
 
 @cli.command()
 def discover(timeout: Annotated[int, typer.Option("--timeout", "-t", help="Segundos de búsqueda.")] = 5) -> None:
@@ -164,14 +158,7 @@ def discover(timeout: Annotated[int, typer.Option("--timeout", "-t", help="Segun
 
 @cli.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
 def llama(ctx: typer.Context, llama_bin: LLamaBinOpt = None) -> None:
-    """
-    Reenvía cualquier argumento directamente a `llama-cli`.
-
-    Ejemplo:
-        lmserv llama -m models/mi.gguf -p "Hola"
-        lmserv llama -hf ggml-org/gemma-3-1b-it-GGUF -p "Hola"
-    """
-    # Importante: no usamos Config() para no exigir MODEL aquí
+    """Reenvía cualquier argumento directamente a `llama-cli`."""
     llama_path = _resolve_llama_bin_from_opts_or_env(llama_bin)
     cmd = [str(llama_path), *ctx.args]
     try:
