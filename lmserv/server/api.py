@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, StreamingResponse
@@ -12,12 +12,17 @@ from pydantic import BaseModel, Field
 from ..config import Config
 from .pool import WorkerPool
 from .security import api_key_auth
+from .tools import ToolManager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Maneja el inicio y apagado de los recursos de la aplicación."""
     app.state.config = Config()
     app.state.pool = WorkerPool(app.state.config)
+    if app.state.config.tools_path:
+        app.state.tool_manager = ToolManager(app.state.config.tools_path)
+    else:
+        app.state.tool_manager = None
     await app.state.pool.start()
     yield
     if app.state.pool:
@@ -44,7 +49,7 @@ async def health(request: Request) -> str:
 
 import json
 
-# --- Tool Definitions ---
+# --- Tool Implementations ---
 def get_weather(city: str, unit: str = "celsius") -> str:
     """Placeholder for a real weather tool."""
     if "tokyo" in city.lower():
@@ -54,7 +59,7 @@ def get_weather(city: str, unit: str = "celsius") -> str:
     else:
         return json.dumps({"temperature": "20", "unit": unit})
 
-TOOLS = {
+TOOL_REGISTRY = {
     "get_weather": get_weather,
 }
 
@@ -64,6 +69,8 @@ async def chat(request: Request, req: ChatRequest) -> PlainTextResponse:
     Genera una respuesta usando un modelo de lenguaje con un posible bucle de razonamiento y uso de herramientas.
     """
     pool: WorkerPool = request.app.state.pool
+    tool_manager: ToolManager | None = request.app.state.tool_manager
+    tools = tool_manager.tools if tool_manager else {}
     worker = await pool.acquire()
 
     conversation_history = [f"User: {req.prompt}"]
@@ -89,13 +96,14 @@ async def chat(request: Request, req: ChatRequest) -> PlainTextResponse:
                     tool_name = tool_call.get("name")
                     tool_args = tool_call.get("arguments", {})
 
-                    if tool_name in TOOLS:
-                        # Ejecuta la herramienta
-                        tool_function = TOOLS[tool_name]
-                        tool_result = tool_function(**tool_args)
-
-                        # Añade el resultado a la conversación
-                        conversation_history.append(f"Tool Result: {tool_result}")
+                    if tool_name in tools and tool_name in TOOL_REGISTRY:
+                        # Execute the tool
+                        tool_function = TOOL_REGISTRY[tool_name]
+                        try:
+                            tool_result = tool_function(**tool_args)
+                            conversation_history.append(f"Tool Result: {tool_result}")
+                        except Exception as e:
+                            conversation_history.append(f"Tool Result: Error executing tool '{tool_name}': {e}")
                         continue # Siguiente vuelta del bucle
                     else:
                         # Herramienta no encontrada
@@ -113,6 +121,56 @@ async def chat(request: Request, req: ChatRequest) -> PlainTextResponse:
 
     finally:
         await pool.release(worker)
+
+# --- Endpoints for Tool Management ---
+
+class ToolSchema(BaseModel):
+    name: str
+    description: str
+    parameters: Dict[str, Any]
+
+def get_tool_manager(request: Request) -> ToolManager:
+    """Dependency to get the tool manager or raise an exception if not available."""
+    if not request.app.state.tool_manager:
+        raise HTTPException(status_code=400, detail="Tool management is not enabled. Start the server with --tools option.")
+    return request.app.state.tool_manager
+
+@app.get("/tools", response_model=List[ToolSchema], dependencies=[Depends(api_key_auth)])
+async def list_tools(tm: ToolManager = Depends(get_tool_manager)):
+    """List all available tools."""
+    return tm.get_all()
+
+@app.post("/tools", response_model=ToolSchema, status_code=201, dependencies=[Depends(api_key_auth)])
+async def create_tool(tool: ToolSchema, tm: ToolManager = Depends(get_tool_manager)):
+    """Create a new tool."""
+    try:
+        created_tool = tm.add(tool.model_dump())
+        return created_tool
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+@app.get("/tools/{tool_name}", response_model=ToolSchema, dependencies=[Depends(api_key_auth)])
+async def get_tool(tool_name: str, tm: ToolManager = Depends(get_tool_manager)):
+    """Retrieve a single tool by name."""
+    tool = tm.get_one(tool_name)
+    if not tool:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found.")
+    return tool
+
+@app.put("/tools/{tool_name}", response_model=ToolSchema, dependencies=[Depends(api_key_auth)])
+async def update_tool(tool_name: str, tool: ToolSchema, tm: ToolManager = Depends(get_tool_manager)):
+    """Update an existing tool."""
+    updated_tool = tm.update(tool_name, tool.model_dump())
+    if not updated_tool:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found.")
+    return updated_tool
+
+@app.delete("/tools/{tool_name}", status_code=204, dependencies=[Depends(api_key_auth)])
+async def delete_tool(tool_name: str, tm: ToolManager = Depends(get_tool_manager)):
+    """Delete a tool by name."""
+    if not tm.delete(tool_name):
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found.")
+    return None
 
 @app.get("/", response_class=PlainTextResponse, include_in_schema=False)
 def root() -> str:
