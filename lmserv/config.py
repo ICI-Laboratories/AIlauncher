@@ -34,26 +34,31 @@ def _iter_unique(items: Iterable[Path]) -> Iterable[Path]:
 
 @dataclass(slots=True)
 class Config:
+    # --- Parámetros del Servidor ---
     model: str = os.getenv("MODEL", "")
     workers: int = _getenv_int("WORKERS", 2)
     host: str = os.getenv("HOST", "0.0.0.0")
     port: int = _getenv_int("PORT", 8000)
     api_key: str = os.getenv("API_KEY", "changeme")
-    max_tokens: int = _getenv_int("MAX_TOKENS", 128)
+    llama_bin: str | None = field(default_factory=lambda: os.getenv("LLAMA_BIN"))
+    tools_path: str | None = os.getenv("TOOLS_PATH")
+
+    # --- Parámetros del Modelo (Llama) ---
+    max_tokens: int = _getenv_int("MAX_TOKENS", 1024)
+    ctx_size: int = _getenv_int("CTX_SIZE", 2048)
+    n_gpu_layers: int = _getenv_int("N_GPU_LAYERS", 0)
+    lora: str | None = os.getenv("LORA")
+
+    # --- Parámetros de Inferencia (legado, pueden removerse si no se usan) ---
     gpu_idx: int = _getenv_int("GPU_IDX", 0)
     vram_cap_mb: int = _getenv_int("VRAM_CAP_MB", 24000)
-    llama_bin: str | None = field(default_factory=lambda: os.getenv("LLAMA_BIN"))
+
 
     def __post_init__(self) -> None:
         """Resuelve `llama_bin` y valida que se haya especificado un modelo."""
         self.llama_bin = self._resolve_llama_bin()
-
-        # --- INICIO DE LA CORRECCIÓN ---
-        # Simplemente validamos que el modelo exista. No intentamos "adivinar"
-        # si es una ruta o un repo de HF. Dejamos que el LlamaWorker decida.
         if not self.model:
             raise ValueError("No se ha especificado un modelo. Usa --model o la variable de entorno MODEL.")
-        # --- FIN DE LA CORRECCIÓN ---
 
     def _resolve_llama_bin(self) -> str:
         """Busca `llama-cli` en el orden correcto y devuelve una ruta absoluta."""
@@ -67,10 +72,11 @@ class Config:
         if which := shutil.which("llama-cli"):
             candidates.append(Path(which))
 
-        build_root = project_root / "build"
-        if build_root.exists():
-            candidates.append(build_root / "build-cuda" / "bin" / "llama-cli")
-            candidates.append(build_root / "build-cpu" / "bin" / "llama-cli")
+        # Rutas de compilación actualizadas
+        build_dir = project_root / "build"
+        if build_dir.is_dir():
+            candidates.append(build_dir / "llama.cpp" / "llama-cli") # Ruta estándar
+            candidates.append(build_dir / "bin" / "llama-cli") # Ruta antigua (si aplica)
 
         for path in _iter_unique(candidates):
             path = _with_windows_ext(path)
@@ -82,8 +88,10 @@ class Config:
         )
 
     def __repr__(self) -> str:
+        lora_info = f", lora='{self.lora}'" if self.lora else ""
+        tools_info = f", tools='{self.tools_path}'" if self.tools_path else ""
         params = (
-            f"model='{self.model}', workers={self.workers}, "
-            f"host={self.host}, port={self.port}, gpu={self.gpu_idx}"
+            f"model='{self.model}', workers={self.workers}, host='{self.host}:{self.port}', "
+            f"gpu_layers={self.n_gpu_layers}, ctx={self.ctx_size}{lora_info}{tools_info}"
         )
         return f"<Config {params}>"

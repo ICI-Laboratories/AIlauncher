@@ -51,6 +51,9 @@ def _default_ngl_for_vram(vram_mb: int) -> int:
     return 50
 
 
+import json
+from ...gbnf import schema_to_gbnf
+
 class LlamaWorker:
     """Gestiona un proceso `llama-cli` y su IO asíncrono."""
 
@@ -62,31 +65,91 @@ class LlamaWorker:
         self._queue: asyncio.Queue[tuple[str, str | None]] | None = None
         self._stdout_task: asyncio.Task | None = None
         self._stderr_task: asyncio.Task | None = None
+        self.grammar: str | None = None
+        self.system_prompt: str = "You are a helpful assistant."
+
+    def _prepare_tools(self):
+        """Carga las herramientas, genera la gramática GBNF y el system prompt."""
+        if not self.cfg.tools_path:
+            return
+
+        logger.info("[%s] Cargando herramientas desde %s", self.id, self.cfg.tools_path)
+        with open(self.cfg.tools_path, "r", encoding="utf-8") as f:
+            tools_def = json.load(f)
+
+        tool_schemas = tools_def.get("tools", [])
+        if not tool_schemas:
+            return
+
+        # Construye el master schema
+        tool_names = [tool["name"] for tool in tool_schemas]
+        master_schema = {
+            "type": "object",
+            "properties": {
+                "thought": {"type": "string"},
+                "tool_call": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "enum": tool_names},
+                        "arguments": {
+                            "oneOf": [tool["parameters"] for tool in tool_schemas]
+                        }
+                    },
+                    "required": ["name", "arguments"]
+                }
+            },
+            "required": ["thought"]
+        }
+
+        self.grammar = schema_to_gbnf(master_schema)
+
+        # Construye el system prompt
+        prompt_parts = [
+            "You have access to the following tools. You must respond in JSON format that matches the specified schema.",
+            "The JSON object must have a 'thought' field and may optionally have a 'tool_call' field.",
+            "Available tools:",
+            json.dumps(tools_def, indent=2)
+        ]
+        self.system_prompt = "\n".join(prompt_parts)
+        logger.info("[%s] Gramática y system prompt para herramientas generados.", self.id)
+
 
     async def spawn(self) -> None:
         """Lanza `llama-cli` con el modelo indicado (local o remoto HF)."""
+        self._prepare_tools()
+
+        # --- Argumentos del Modelo ---
         model_identifier = self.cfg.model
         if _looks_like_hf_repo(model_identifier):
             repo = _strip_hf_prefix(model_identifier)
             logger.info("[%s] Usando modelo de Hugging Face: %s", self.id, repo)
-            model_arg = ["-hf", repo]
+            model_arg = ["--hf-repo", repo]
         else:
             p = Path(model_identifier)
-            if not p.exists():
-                raise FileNotFoundError(f"Modelo local no encontrado en {model_identifier}")
-            logger.info("[%s] Usando modelo local: %s", self.id, model_identifier)
-            model_arg = ["-m", str(p)]
+            if not p.is_file():
+                raise FileNotFoundError(f"Modelo local no encontrado en {p.resolve()}")
+            logger.info("[%s] Usando modelo local: %s", self.id, p.resolve())
+            model_arg = ["--model", str(p.resolve())]
 
-        ngl = int(os.getenv("NGPU_LAYERS", _default_ngl_for_vram(self.cfg.vram_cap_mb)))
-        gpu_flags: list[str] = ["-ngl", str(ngl)]
-        if self.cfg.gpu_idx:
-            gpu_flags += ["-mg", str(self.cfg.gpu_idx)]
-
-        cmd = [
-            self.cfg.llama_bin, *model_arg, "-i", "--interactive-first",
-            "-n", str(self.cfg.max_tokens), "--reverse-prompt", REVERSE_PROMPT,
-            *gpu_flags,
+        # --- Argumentos de Llama.cpp ---
+        llama_args = [
+            "--interactive",
+            "--interactive-first",
+            "--reverse-prompt", REVERSE_PROMPT,
+            "--n-predict", str(self.cfg.max_tokens),
+            "--ctx-size", str(self.cfg.ctx_size),
+            "--n-gpu-layers", str(self.cfg.n_gpu_layers),
         ]
+        if self.cfg.lora:
+            lora_path = Path(self.cfg.lora)
+            if not lora_path.is_file():
+                raise FileNotFoundError(f"Fichero LoRA no encontrado en {lora_path.resolve()}")
+            llama_args.extend(["--lora", str(lora_path.resolve())])
+
+        if self.grammar:
+            llama_args.extend(["--grammar", self.grammar])
+
+        cmd = [self.cfg.llama_bin, *model_arg, *llama_args]
 
         logger.info("[%s] spawn → %s", self.id, " ".join(map(str, cmd)))
 
@@ -136,12 +199,8 @@ class LlamaWorker:
             if line is None:
                 raise RuntimeError(f"[{self.id}] llama-cli finalizó prematuramente")
             
-            # --- INICIO DE LA CORRECCIÓN ---
-            # El marcador puede aparecer tanto en stdout como en stderr.
-            # Eliminamos la condición 'stream != "stderr"'.
             if any(marker in line for marker in READY_MARKERS):
                 return
-            # --- FIN DE LA CORRECCIÓN ---
 
     async def infer(self, prompt: str, **kwargs) -> AsyncIterator[str]:
         if not self.proc or self.proc.poll() is not None:
@@ -154,8 +213,10 @@ class LlamaWorker:
             try: self._queue.get_nowait()
             except asyncio.QueueEmpty: break
 
-        full_input = f"{prompt.strip()}{os.linesep}"
-        self.proc.stdin.write(full_input)
+        # Prepend system prompt if it exists
+        full_prompt = f"{self.system_prompt}\n\nUser: {prompt.strip()}"
+
+        self.proc.stdin.write(f"{full_prompt}{os.linesep}")
         self.proc.stdin.flush()
 
         first_token = True

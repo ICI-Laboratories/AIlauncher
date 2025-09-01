@@ -21,104 +21,78 @@ cli = typer.Typer(
 
 # ───────────────── Opciones ─────────────────
 
-ModelOpt = Annotated[
-    str,
-    typer.Option(
-        "--model",
-        "-m",
-        help="Ruta a un .gguf local o un ID de repositorio de Hugging Face (ej: 'ggml-org/gemma-3-1b-it-GGUF').",
-    ),
-]
+# --- Opciones de Typer ---
+ModelOpt = Annotated[str, typer.Option("--model", "-m", help="ID de Hugging Face o ruta a un .gguf local.", rich_help_panel="Parámetros del Servidor")]
+WorkersOpt = Annotated[int, typer.Option("--workers", "-w", min=1, help="Número de workers de llama.cpp.", rich_help_panel="Parámetros del Servidor")]
+HostOpt = Annotated[str, typer.Option("--host", "-H", help="Interfaz de red para el servidor.", rich_help_panel="Parámetros del Servidor")]
+PortOpt = Annotated[int, typer.Option("--port", "-p", help="Puerto HTTP para el servidor.", rich_help_panel="Parámetros del Servidor")]
+LLamaBinOpt = Annotated[Optional[Path], typer.Option("--llama-bin", exists=True, dir_okay=False, help="Ruta al binario `llama-cli`.", rich_help_panel="Parámetros del Servidor")]
 
-WorkersOpt = Annotated[
-    int,
-    typer.Option("--workers", "-w", min=1, show_default=True, help="Número de procesos llama-cli en paralelo."),
-]
-HostOpt = Annotated[str, typer.Option("--host", "-H", help="Interfaz en la que escuchará FastAPI.")]
-PortOpt = Annotated[int, typer.Option("--port", "-p", help="Puerto HTTP para el endpoint REST.")]
-MaxTokOpt = Annotated[int, typer.Option("--max-tokens", help="Límite de tokens a generar por petición.")]
-LLamaBinOpt = Annotated[
-    Optional[Path],
-    typer.Option("--llama-bin", exists=True, dir_okay=False, readable=True, resolve_path=True,
-                 help="Ruta al ejecutable `llama-cli`."),
-]
+# --- Opciones de Llama ---
+CtxSizeOpt = Annotated[int, typer.Option("--ctx-size", help="Tamaño del contexto en tokens.", rich_help_panel="Parámetros del Modelo")]
+NGpuLayersOpt = Annotated[int, typer.Option("--n-gpu-layers", help="Número de capas a descargar en GPU.", rich_help_panel="Parámetros del Modelo")]
+MaxTokOpt = Annotated[int, typer.Option("--max-tokens", help="Límite de tokens por respuesta.", rich_help_panel="Parámetros del Modelo")]
+LoraOpt = Annotated[Optional[Path], typer.Option("--lora", exists=True, dir_okay=False, help="Ruta a un adaptador LoRA (.gguf).", rich_help_panel="Parámetros del Modelo")]
+ToolsOpt = Annotated[Optional[Path], typer.Option("--tools", exists=True, dir_okay=False, help="Ruta a un fichero JSON con la definición de herramientas.", rich_help_panel="Parámetros del Modelo")]
 
-# ─────────────── Utilidades internas ───────────────
-
-def _is_executable_file(p: Path) -> bool:
-    try:
-        return p.is_file() and os.access(p, os.X_OK)
-    except OSError:
-        return False
-
-def _with_windows_ext(p: Path) -> Path:
-    if os.name == "nt" and p.suffix.lower() != ".exe":
-        cand = p.with_suffix(p.suffix + ".exe") if p.suffix else p.with_suffix(".exe")
-        return cand if cand.exists() else p
-    return p
-
-def _default_rel_llama() -> Path:
-    return Path(__file__).resolve().parent / "build" / "bin" / "llama-cli"
-
-def _resolve_llama_bin_from_opts_or_env(llama_bin_opt: Optional[Path]) -> str:
-    candidates: list[Path] = []
-
-    if llama_bin_opt:
-        p = Path(llama_bin_opt)
-        candidates.append(p)
-
-    which = shutil.which("llama-cli")
-    if which:
-        candidates.append(Path(which))
-
-    candidates.append(_default_rel_llama())
-
-    seen: set[str] = set()
-    for path in candidates:
-        path = _with_windows_ext(Path(path))
-        key = str(path)
-        if key in seen:
-            continue
-        seen.add(key)
-        if _is_executable_file(path):
-            return str(path.resolve())
-
-    raise typer.BadParameter(
-        "No se encontró `llama-cli`. "
-        "Instálalo/compílalo (p.ej. `lmserv install llama`) o proporciona --llama-bin=/ruta/al/llama-cli."
-    )
 
 # ─────────────── Comandos ───────────────
 
 @cli.command()
 def serve(
+    # --- Opciones del Servidor ---
     model: ModelOpt,
     workers: WorkersOpt = 2,
     host: HostOpt = "0.0.0.0",
     port: PortOpt = 8000,
-    max_tokens: MaxTokOpt = 128,
     llama_bin: LLamaBinOpt = None,
+    # --- Opciones del Modelo ---
+    ctx_size: CtxSizeOpt = 2048,
+    n_gpu_layers: NGpuLayersOpt = 0,
+    max_tokens: MaxTokOpt = 1024,
+    lora: LoraOpt = None,
+    tools: ToolsOpt = None,
 ) -> None:
     """Lanza la API REST y los *workers* de llama.cpp."""
+    # Configura el entorno para el proceso de Uvicorn
     env = os.environ.copy()
-    env.update(
-        {
-            "MODEL": model,
-            "WORKERS": str(workers),
-            "HOST": host,
-            "PORT": str(port),
-            "MAX_TOKENS": str(max_tokens),
-        }
-    )
+    env.update({
+        "MODEL": model,
+        "WORKERS": str(workers),
+        "HOST": host,
+        "PORT": str(port),
+        "MAX_TOKENS": str(max_tokens),
+        "CTX_SIZE": str(ctx_size),
+        "N_GPU_LAYERS": str(n_gpu_layers),
+    })
     if llama_bin:
-        env["LLAMA_BIN"] = str(llama_bin)
+        env["LLAMA_BIN"] = str(llama_bin.resolve())
+    if lora:
+        env["LORA"] = str(lora.resolve())
+    if tools:
+        env["TOOLS_PATH"] = str(tools.resolve())
 
-    typer.echo(f"🚀  Levantando LMServ: http://{host}:{port}/chat  (modelo='{model}')")
-    subprocess.run(
-        [sys.executable, "-m", "uvicorn", "lmserv.server.api:app", "--host", host, "--port", str(port)],
-        check=True,
-        env=env,
-    )
+    # Lanza el servidor
+    typer.echo(f"🚀  Levantando LMServ en http://{host}:{port}")
+    typer.echo(f"   • Modelo: {model}")
+    if lora:
+        typer.echo(f"   • LoRA: {lora.name}")
+    if tools:
+        typer.echo(f"   • Herramientas: {tools.name}")
+    typer.echo(f"   • Workers: {workers}, Contexto: {ctx_size} tokens, GPU Layers: {n_gpu_layers}")
+
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "uvicorn", "lmserv.server.api:app", "--host", host, "--port", str(port)],
+            check=True,
+            env=env,
+        )
+    except subprocess.CalledProcessError:
+        # Uvicorn usualmente es interrumpido con Ctrl+C, lo cual es normal.
+        typer.echo("\n👋  Servidor detenido.")
+    except Exception as e:
+        typer.secho(f"💥 Error inesperado al lanzar Uvicorn: {e}", fg="red")
+        raise typer.Exit(1)
 
 install_app = typer.Typer(help="Sub-comandos para compilar llama.cpp.")
 cli.add_typer(install_app, name="install")
