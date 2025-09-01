@@ -42,32 +42,34 @@ command -v sudo >/dev/null 2>&1 || die "Se requiere 'sudo'."
 install_system_deps() {
   print_info "Detectando gestor de paquetes e instalando dependencias..."
   local pm=""
-  local packages=""
+  local -a packages # Declara como un array
   local assume_yes_flag="-y" # Para apt, dnf, yum
 
   if command -v apt-get &>/dev/null; then
     pm="apt"
     print_info "Distribución basada en Debian/Ubuntu detectada."
-    packages="git python3-venv python3-pip build-essential cmake libcurl4-openssl-dev"
+    # Define como un array
+    packages=(git python3-venv python3-pip build-essential cmake libcurl4-openssl-dev)
     sudo apt-get update -y
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install $assume_yes_flag $packages
+    # Expande el array correctamente
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install $assume_yes_flag "${packages[@]}"
   elif command -v dnf &>/dev/null; then
     pm="dnf"
     print_info "Distribución basada en Fedora/CentOS detectada."
-    packages="git python3-devel python3-pip cmake gcc-c++ make libcurl-devel"
-    sudo dnf install $assume_yes_flag $packages
+    packages=(git python3-devel python3-pip cmake gcc-c++ make libcurl-devel)
+    sudo dnf install $assume_yes_flag "${packages[@]}"
   elif command -v yum &>/dev/null; then
     pm="yum"
     print_info "Distribución basada en RHEL/CentOS (legacy) detectada."
-    packages="git python3-devel python3-pip cmake gcc-c++ make libcurl-devel"
-    sudo yum install $assume_yes_flag $packages
+    packages=(git python3-devel python3-pip cmake gcc-c++ make libcurl-devel)
+    sudo yum install $assume_yes_flag "${packages[@]}"
   elif command -v pacman &>/dev/null; then
     pm="pacman"
     print_info "Distribución basada en Arch Linux detectada."
-    packages="git python-pip base-devel cmake curl"
+    packages=(git python-pip base-devel cmake curl)
     assume_yes_flag="--noconfirm --needed"
     sudo pacman -Syu $assume_yes_flag
-    sudo pacman -S $assume_yes_flag $packages
+    sudo pacman -S $assume_yes_flag "${packages[@]}"
   else
     die "No se pudo detectar un gestor de paquetes compatible (apt, dnf, yum, pacman)."
   fi

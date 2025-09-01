@@ -56,36 +56,58 @@ class Config:
 
     def __post_init__(self) -> None:
         """Resuelve `llama_bin` y valida que se haya especificado un modelo."""
-        self.llama_bin = self._resolve_llama_bin()
         if not self.model:
+            # La validación del modelo se hace aquí para que falle rápido.
             raise ValueError("No se ha especificado un modelo. Usa --model o la variable de entorno MODEL.")
+        self.llama_bin = self._resolve_llama_bin()
+
 
     def _resolve_llama_bin(self) -> str:
-        """Busca `llama-cli` en el orden correcto y devuelve una ruta absoluta."""
+        """
+        Busca `llama-cli` en el orden correcto y devuelve una ruta absoluta.
+        Orden de búsqueda:
+        1. Ruta explícita (--llama-bin / LLAMA_BIN).
+        2. En el PATH del sistema.
+        3. En el directorio de compilación por defecto ('build/').
+        """
         candidates: list[Path] = []
+        # El directorio raíz del proyecto contiene la carpeta 'lmserv'
         project_root = Path(__file__).resolve().parent.parent
 
+        # 1. Priorizar la ruta explícita
         if self.llama_bin:
             p = Path(self.llama_bin).expanduser().resolve()
-            candidates.append(p.parent / "llama-cli" if p.is_dir() else p)
+            candidates.append(p / "llama-cli" if p.is_dir() else p)
 
+        # 2. Buscar en el PATH del sistema
         if which := shutil.which("llama-cli"):
             candidates.append(Path(which))
 
-        # Rutas de compilación actualizadas
-        build_dir = project_root / "build"
-        if build_dir.is_dir():
-            candidates.append(build_dir / "llama.cpp" / "llama-cli") # Ruta estándar
-            candidates.append(build_dir / "bin" / "llama-cli") # Ruta antigua (si aplica)
+        # 3. Buscar en la ubicación de compilación por defecto
+        build_root = project_root / "build"
+        if build_root.is_dir():
+            # El script de build clona llama.cpp DENTRO de 'build', por lo que
+            # el binario estará en algo como 'build/build-cuda/bin/llama-cli'
+            for flavor_dir in build_root.iterdir():
+                if flavor_dir.is_dir() and flavor_dir.name.startswith("build-"):
+                    bin_path = flavor_dir / "bin" / "llama-cli"
+                    candidates.append(bin_path)
+            # También revisamos la estructura antigua por si acaso
+            candidates.append(build_root / "bin" / "llama-cli")
 
+
+        # Iterar sobre los candidatos y devolver el primero que sea ejecutable
         for path in _iter_unique(candidates):
-            path = _with_windows_ext(path)
-            if _is_executable_file(path):
-                return str(path.resolve())
+            path_with_ext = _with_windows_ext(path)
+            if _is_executable_file(path_with_ext):
+                return str(path_with_ext.resolve())
 
+        # Si no se encuentra, lanzar un error claro
         raise FileNotFoundError(
-            "No se encontró `llama-cli`. Ejecuta `lmserv install llama` o proporciona la ruta con --llama-bin."
+            "No se encontró `llama-cli`. Asegúrate de que la compilación haya sido exitosa "
+            "con `lmserv install llama` o proporciona la ruta explícitamente con --llama-bin."
         )
+
 
     def __repr__(self) -> str:
         lora_info = f", lora='{self.lora}'" if self.lora else ""
