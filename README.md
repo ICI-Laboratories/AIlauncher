@@ -15,133 +15,114 @@ alt="Arquitectura: CLI → FastAPI → WorkerPool → llama-cli" /\>
 
 | Característica | Descripción |
 | :--- | :--- |
-| **Instalador Automatizado** | Un script (`setup.sh`) se encarga de compilar `llama.cpp` (para CPU o CUDA) y configurar todo el entorno. |
-| **API de Streaming** | El endpoint `POST /chat` devuelve los tokens a medida que se generan, ideal para interfaces web en tiempo real. |
+| **Instalador Multi-Distro** | Un script (`setup.sh`) detecta tu SO (Ubuntu, Fedora, Arch) y compila `llama.cpp` (CPU o CUDA). |
+| **Uso de Herramientas (Agente)** | Define herramientas en JSON; el modelo puede decidir usarlas en un bucle de razonamiento. |
+| **Gramáticas Forzadas (GBNF)** | Genera automáticamente gramáticas para forzar al modelo a producir JSON válido para las llamadas a herramientas. |
 | **Workers Persistentes** | Reutiliza los procesos de `llama-cpp` para atender peticiones con muy baja latencia. |
-| **Multi-Worker** | Capacidad para procesar múltiples peticiones de forma simultánea, una por cada worker. |
-| **Auto-reparación** | Los workers que fallan se reinician automáticamente para asegurar la disponibilidad del servicio. |
-| **Descarga Automática** | Utiliza la nueva funcionalidad de `llama.cpp` para descargar modelos directamente desde Hugging Face al primer uso. |
+| **Multi-Worker** | Capacidad para procesar múltiples peticiones de forma simultánea. |
+| **Descarga Automática** | Descarga modelos de Hugging Face al primer uso. |
 
 -----
 
-## 🚀 Guía de Inicio Rápido (Ubuntu)
+## 🚀 Guía de Inicio Rápido (Linux y WSL2)
 
-La instalación está completamente automatizada. Tras clonar el repositorio, solo necesitas ejecutar un comando.
+### Paso 1: Instalación
 
-### Paso 1: Clonar el Repositorio
-
+El script de instalación automatizada se encarga de todo.
 ```bash
 git clone https://github.com/ICI-Laboratories/AIlauncher.git
 cd AIlauncher
-```
-
-### Paso 2: Ejecutar el Script de Instalación
-
-Este único comando se encargará de instalar las dependencias del sistema, configurar el entorno de Python, compilar `llama.cpp` y dejar todo listo.
-
-```bash
 bash setup.sh
 ```
 
-*El script te pedirá tu contraseña para instalar paquetes (`apt`) y te preguntará si deseas compilar con soporte para GPU si detecta una.*
+### Paso 2: Uso Básico del Servidor
 
------
+```bash
+# Activa el entorno virtual
+source env/bin/activate
 
-## 💻 Cómo Usar el Servidor
+# Define una clave de API para proteger tu servidor
+export API_KEY=my-super-secret-key
 
-Una vez finalizada la instalación, sigue estos pasos para lanzar el servidor:
+# Lanza el servidor con un modelo de Hugging Face
+lmserv serve --model ggml-org/gemma-3-1b-it-GGUF
+```
 
-1.  **Activa el entorno virtual:**
+### Paso 3: Uso con Herramientas (Modo Agente)
 
-    ```bash
-    source env/bin/activate
+1.  **Crea un fichero de herramientas `tools.json`:**
+    ```json
+    {
+      "tools": [
+        {
+          "name": "get_weather",
+          "description": "Obtiene el clima actual para una ciudad.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": { "type": "string", "description": "La ciudad, ej: 'San Francisco, CA'" },
+              "unit": { "type": "string", "enum": ["celsius", "fahrenheit"] }
+            },
+            "required": ["city"]
+          }
+        }
+      ]
+    }
     ```
-
-2.  **Lanza el servidor con un modelo de Hugging Face:**
-
+2.  **Lanza el servidor con el flag `--tools`:**
     ```bash
-    export API_KEY=mysecret
-    lmserv serve --model ggml-org/gemma-3-1b-it-GGUF --workers 2
+    lmserv serve \
+      --model TheBloke/Mistral-7B-Instruct-v0.2-GGUF \
+      --tools tools.json \
+      --n-gpu-layers 35
     ```
-
-    > La primera vez que uses un modelo, se descargará y guardará en caché automáticamente. Esto puede tardar varios minutos. Los siguientes arranques serán casi instantáneos.
+3.  **Realiza una petición que requiera la herramienta:**
+    ```bash
+    curl -H "X-API-Key: my-super-secret-key" \
+         -H "Content-Type: application/json" \
+         -d '{"prompt":"¿Qué clima hace en Tokyo?"}' \
+         http://localhost:8000/chat
+    ```
+    El servidor devolverá la respuesta final del modelo después de haber llamado a la herramienta `get_weather`.
 
 -----
 
 ## 🛠️ Guía de la API para Desarrolladores
 
-Para integrar LMServ en tus aplicaciones, utiliza el siguiente endpoint.
+### Flujo de Razonamiento y Herramientas
+
+Cuando se usa el flag `--tools`, el endpoint `/chat` cambia su comportamiento:
+1.  El servidor recibe el `prompt`.
+2.  El modelo genera un JSON con su "pensamiento" (`thought`) y, opcionalmente, una llamada a una herramienta (`tool_call`).
+3.  Si hay una `tool_call`, el servidor la ejecuta.
+4.  El resultado de la herramienta se re-inserta en el contexto del modelo.
+5.  El proceso se repite hasta que el modelo genera una respuesta final (un `thought` sin `tool_call`).
+6.  La respuesta final (`thought`) se devuelve al cliente.
+
+Este ciclo convierte a LMServ en un **agente básico** capaz de usar herramientas para responder preguntas.
 
 ### Endpoint de Chat
 
-  * **Método:** `POST`
-  * **Ruta:** `/chat`
-  * **URL Completa (ejemplo local):** `http://localhost:8000/chat`
-
-### Cabeceras (Headers)
-
-| Cabecera | Valor de Ejemplo | Obligatorio |
-| :--- | :--- | :--- |
-| `Content-Type` | `application/json` | **Sí** |
-| `X-API-Key` | `mysecret` | **Sí** |
-
-### Cuerpo de la Petición (JSON Body)
-
-El cuerpo de la petición debe ser un objeto JSON. El único campo obligatorio es `prompt`.
-
-| Parámetro | Tipo | Obligatorio | Descripción |
-| :--- | :--- | :--- | :--- |
-| `prompt` | `string` | **Sí** | El texto o la pregunta para el modelo. |
-| `system_prompt` | `string` | No | Instrucción general para guiar el comportamiento del modelo (ej: "Eres un asistente servicial y creativo"). |
-| `max_tokens` | `integer` | No | Número máximo de tokens a generar en la respuesta. Por defecto: `128`. |
-| `temperature` | `float` | No | Controla la creatividad. Un valor más alto (ej. `0.8`) genera respuestas más variadas. |
-| `top_p` | `float` | No | Método de muestreo alternativo a `temperature`. |
-| `repeat_penalty`| `float` | No | Penaliza la repetición de palabras. Un valor común es `1.1`. |
-
-### Formato de la Respuesta
-
-La respuesta del servidor es un **flujo de texto plano** (`text/plain`), no un JSON. Los tokens se envían uno por uno a medida que se generan, lo que permite mostrarlos en tiempo real en la aplicación cliente.
-
-### Ejemplos de Peticiones con `curl`
-
-#### Petición Sencilla
-
-```bash
-curl -N -H "X-API-Key: mysecret" \
-     -H "Content-Type: application/json" \
-     -d '{"prompt":"Hola, ¿quién eres?"}' \
-     http://localhost:8000/chat
-```
-
-#### Petición con Hiperparámetros
-
-```bash
-curl -N -H "X-API-Key: mysecret" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "prompt": "Escribe un poema corto sobre los limones de Tecomán.",
-       "system_prompt": "Eres un poeta experto en la belleza de Colima.",
-       "max_tokens": 100,
-       "temperature": 0.75
-     }' \
-     http://localhost:8000/chat
-```
+*   **Método:** `POST`
+*   **Ruta:** `/chat`
+*   **Cuerpo (JSON):** `{ "prompt": "Tu pregunta aquí" }`
+*   **Respuesta (`text/plain`):** La respuesta final del modelo después del ciclo de razonamiento.
 
 -----
 
-## ✨ Comandos de la CLI
+## ✨ Comandos de la CLI (`lmserv serve`)
 
-\<details\>
-\<summary\>\<code\>lmserv serve\</code\> – Lanza el servidor de API\</summary\>
+| Parámetro | Flag | Descripción | Panel |
+| :--- | :--- | :--- | :--- |
+| **Modelo** | `-m`, `--model` | **(Requerido)** ID de Hugging Face o ruta a un fichero `.gguf`. | Servidor |
+| **Herramientas** | `--tools` | **(Opcional)** Ruta al fichero JSON que define las herramientas. | Servidor |
+| **Workers** | `-w`, `--workers` | Número de workers a ejecutar en paralelo. | Servidor |
+| **Host/Puerto** | `-H`, `-p` | Interfaz y puerto de red del servidor. | Servidor |
+| **Capas en GPU** | `--n-gpu-layers` | Número de capas del modelo a descargar en la VRAM. | Modelo |
+| **Tamaño Contexto**| `--ctx-size` | Tamaño del contexto del modelo en tokens. | Modelo |
+| **Adaptador LoRA**| `--lora` | Ruta a un adaptador LoRA (`.gguf`) para aplicar al modelo. | Modelo |
 
-| Flag | Descripción |
-| :--- | :--- |
-| `-m, --model TEXT` | **(Requerido)** Ruta a un `.gguf` local o ID de un repositorio de Hugging Face. |
-| `-w, --workers INT` | Número de procesos del modelo a ejecutar en paralelo. Por defecto: `2`. |
-| `-H, --host TEXT` | Dirección de red en la que el servidor escuchará. Por defecto: `0.0.0.0`. |
-| `-p, --port INT` | Puerto HTTP en el que se ejecutará el servidor. Por defecto: `8000`. |
-
-\</details\>
+</details>
 
 \<details\>
 \<summary\>\<code\>lmserv install llama\</code\> – Compila el motor llama.cpp\</summary\>

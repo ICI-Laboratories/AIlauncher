@@ -42,28 +42,77 @@ async def health(request: Request) -> str:
     pool: WorkerPool = request.app.state.pool
     return f"ok – workers idle: {pool.free.qsize()}"
 
+import json
+
+# --- Tool Definitions ---
+def get_weather(city: str, unit: str = "celsius") -> str:
+    """Placeholder for a real weather tool."""
+    if "tokyo" in city.lower():
+        return json.dumps({"temperature": "15", "unit": unit})
+    elif "san francisco" in city.lower():
+        return json.dumps({"temperature": "12", "unit": unit})
+    else:
+        return json.dumps({"temperature": "20", "unit": unit})
+
+TOOLS = {
+    "get_weather": get_weather,
+}
+
 @app.post("/chat", dependencies=[Depends(api_key_auth)])
-async def chat(request: Request, req: ChatRequest) -> StreamingResponse:
-    """Genera texto via `llama-cli` con parámetros personalizables."""
+async def chat(request: Request, req: ChatRequest) -> PlainTextResponse:
+    """
+    Genera una respuesta usando un modelo de lenguaje con un posible bucle de razonamiento y uso de herramientas.
+    """
     pool: WorkerPool = request.app.state.pool
     worker = await pool.acquire()
 
-    async def _stream() -> AsyncIterator[str]:
-        try:
-            # Pass all parameters from the request to the worker
-            async for token in worker.infer(
-                prompt=req.prompt,
-                system_prompt=req.system_prompt,
-                max_tokens=req.max_tokens,
-                temperature=req.temperature,
-                top_p=req.top_p,
-                repeat_penalty=req.repeat_penalty,
-            ):
-                yield token
-        finally:
-            await pool.release(worker)
+    conversation_history = [f"User: {req.prompt}"]
+    max_turns = 5
 
-    return StreamingResponse(_stream(), media_type="text/plain; charset=utf-8")
+    try:
+        for turn in range(max_turns):
+            # Construye el prompt para esta vuelta
+            prompt = "\n".join(conversation_history)
+
+            # Obtiene la respuesta completa del modelo
+            model_output = ""
+            async for token in worker.infer(prompt=prompt):
+                model_output += token
+
+            try:
+                # Intenta parsear la respuesta como JSON
+                data = json.loads(model_output)
+                thought = data.get("thought", "")
+
+                if "tool_call" in data:
+                    tool_call = data["tool_call"]
+                    tool_name = tool_call.get("name")
+                    tool_args = tool_call.get("arguments", {})
+
+                    if tool_name in TOOLS:
+                        # Ejecuta la herramienta
+                        tool_function = TOOLS[tool_name]
+                        tool_result = tool_function(**tool_args)
+
+                        # Añade el resultado a la conversación
+                        conversation_history.append(f"Tool Result: {tool_result}")
+                        continue # Siguiente vuelta del bucle
+                    else:
+                        # Herramienta no encontrada
+                        conversation_history.append("Tool Result: Error - tool not found.")
+                        continue
+                else:
+                    # No hay llamada a herramienta, la conversación termina
+                    return PlainTextResponse(f"Final Answer:\n{thought}")
+
+            except json.JSONDecodeError:
+                # La respuesta no fue un JSON válido, considérala la respuesta final
+                return PlainTextResponse(f"Final Answer (Invalid JSON):\n{model_output}")
+
+        return PlainTextResponse("Error: El modelo excedió el número máximo de iteraciones.")
+
+    finally:
+        await pool.release(worker)
 
 @app.get("/", response_class=PlainTextResponse, include_in_schema=False)
 def root() -> str:
