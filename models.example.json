@@ -1,0 +1,33 @@
+{
+  "default_model": "research-main",
+  "models": [
+    {
+      "name": "research-main",
+      "backend": "llama_cpp",
+      "target": "models/main-model.gguf",
+      "priority": 100,
+      "workers": 2,
+      "aliases": ["default", "local-main"],
+      "capabilities": {
+        "structured_output": false,
+        "json_mode": false,
+        "tools": false,
+        "streaming": true
+      }
+    },
+    {
+      "name": "research-structured",
+      "backend": "ollama",
+      "target": "llama3.1:8b",
+      "priority": 90,
+      "aliases": ["structured-fallback", "json-router"],
+      "base_url": "http://localhost:11434",
+      "capabilities": {
+        "structured_output": true,
+        "json_mode": true,
+        "tools": true,
+        "streaming": true
+      }
+    }
+  ]
+}

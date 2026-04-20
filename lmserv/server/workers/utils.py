@@ -27,12 +27,6 @@ async def _stream_reader(
         while not proc_control_event.is_set():
             line = await loop.run_in_executor(None, stream.readline)
 
-            # --- DEBUG PRINT ---
-            # This will show you every line received from the llama-cli process
-            if line:
-                print(f"DEBUG [WORKER {worker_id}/{stream_name}]: {line.strip()!r}")
-            # --- END DEBUG ---
-
             if not line:
                 logger.debug("[%s/%s] EOF", worker_id, stream_name)
                 await queue.put((stream_name, None))

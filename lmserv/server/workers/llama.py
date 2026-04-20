@@ -213,8 +213,11 @@ class LlamaWorker:
             try: self._queue.get_nowait()
             except asyncio.QueueEmpty: break
 
-        # Prepend system prompt if it exists
-        full_prompt = f"{self.system_prompt}\n\nUser: {prompt.strip()}"
+        system_prompt = kwargs.get("system_prompt") or self.system_prompt
+        if system_prompt:
+            full_prompt = f"{system_prompt}\n\n{prompt.strip()}"
+        else:
+            full_prompt = prompt.strip()
 
         self.proc.stdin.write(f"{full_prompt}{os.linesep}")
         self.proc.stdin.flush()

@@ -13,7 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 # --------------------------------------------------------------------------- #
 # API-Key
 # --------------------------------------------------------------------------- #
-def api_key_auth(request: Request, x_api_key: str = Header(..., alias="X-API-Key")):
+def api_key_auth(
+    request: Request,
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+    authorization: str | None = Header(None, alias="Authorization"),
+):
     """
     Valida que `X-API-Key` coincida con la configuración en app.state.
     """
@@ -21,7 +25,13 @@ def api_key_auth(request: Request, x_api_key: str = Header(..., alias="X-API-Key
     if not hasattr(request.app.state, "config") or not request.app.state.config:
          raise HTTPException(status_code=503, detail="Server is starting up, please wait.")
 
-    if x_api_key != request.app.state.config.api_key:
+    provided_key = x_api_key
+    if not provided_key and authorization:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() == "bearer" and token:
+            provided_key = token.strip()
+
+    if provided_key != request.app.state.config.api_key:
         raise HTTPException(status_code=401, detail="Bad API key")
 
 

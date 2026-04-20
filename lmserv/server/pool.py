@@ -16,7 +16,6 @@ class WorkerPool:
         self._workers: list[LlamaWorker] = []
         self.free: asyncio.Queue[LlamaWorker] = asyncio.Queue()
         self.busy: set[LlamaWorker] = set()
-        print("DEBUG [POOL]: Stateful WorkerPool created.")
 
     async def start(self) -> None:
         """Lanza todos los procesos `llama-cli` y los añade al pool."""
