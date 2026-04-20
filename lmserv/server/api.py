@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..config import Config
 from ..gateway import GatewayChatRequest, GatewayService, load_catalog
+from .audit import RequestAuditLogger
 from .security import api_key_auth
 from .tools import ToolManager
 
@@ -21,6 +22,7 @@ async def lifespan(app: FastAPI):
     app.state.config = Config()
     app.state.catalog = load_catalog(app.state.config)
     app.state.gateway = GatewayService(app.state.config, app.state.catalog)
+    app.state.request_audit = RequestAuditLogger(app.state.config)
     if app.state.config.tools_path:
         app.state.tool_manager = ToolManager(app.state.config.tools_path)
     else:
@@ -197,6 +199,10 @@ def get_tool_manager(request: Request) -> ToolManager:
     return request.app.state.tool_manager
 
 
+def get_request_audit(request: Request) -> RequestAuditLogger:
+    return request.app.state.request_audit
+
+
 @app.get("/health")
 async def health(request: Request) -> Dict[str, Any]:
     gateway: GatewayService = request.app.state.gateway
@@ -206,21 +212,59 @@ async def health(request: Request) -> Dict[str, Any]:
 @app.post("/chat", dependencies=[Depends(api_key_auth)])
 async def chat(request: Request, req: ChatRequest) -> PlainTextResponse:
     gateway: GatewayService = request.app.state.gateway
+    audit = get_request_audit(request)
     messages: list[dict[str, Any]] = []
     if req.system_prompt:
         messages.append({"role": "system", "content": req.system_prompt})
     messages.append({"role": "user", "content": req.prompt})
+    started_at = time.perf_counter()
 
-    routed_result = await gateway.chat(
-        GatewayChatRequest(
-            model=None,
-            messages=messages,
-            temperature=req.temperature,
-            top_p=req.top_p,
-            max_tokens=req.max_tokens,
+    try:
+        routed_result = await gateway.chat(
+            GatewayChatRequest(
+                model=None,
+                messages=messages,
+                temperature=req.temperature,
+                top_p=req.top_p,
+                max_tokens=req.max_tokens,
+            )
         )
-    )
-    return PlainTextResponse(routed_result.result.content)
+        latency_ms = (time.perf_counter() - started_at) * 1000
+        audit.log_chat_event(
+            endpoint="/chat",
+            client_ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            correlation_id=request.headers.get("x-correlation-id"),
+            idempotency_key=request.headers.get("idempotency-key"),
+            requested_model=None,
+            messages=messages,
+            response_format=None,
+            tools=None,
+            stream_requested=False,
+            routed_result=routed_result,
+            response_payload=None,
+            latency_ms=latency_ms,
+        )
+        return PlainTextResponse(routed_result.result.content)
+    except Exception as exc:
+        latency_ms = (time.perf_counter() - started_at) * 1000
+        audit.log_chat_event(
+            endpoint="/chat",
+            client_ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            correlation_id=request.headers.get("x-correlation-id"),
+            idempotency_key=request.headers.get("idempotency-key"),
+            requested_model=None,
+            messages=messages,
+            response_format=None,
+            tools=None,
+            stream_requested=False,
+            routed_result=None,
+            response_payload=None,
+            latency_ms=latency_ms,
+            error=exc,
+        )
+        raise
 
 
 @app.get("/v1/models", dependencies=[Depends(api_key_auth)])
@@ -241,18 +285,59 @@ async def get_gateway_model(request: Request, model_id: str) -> Dict[str, Any]:
 @app.post("/v1/chat/completions", dependencies=[Depends(api_key_auth)])
 async def chat_completions(request: Request, req: ChatCompletionRequest):
     gateway: GatewayService = request.app.state.gateway
-    routed_result = await gateway.chat(_build_gateway_request(req))
-    response_payload = _build_openai_response(routed_result)
-    headers = _routing_headers(routed_result)
+    audit = get_request_audit(request)
+    request_messages = [message.model_dump(exclude_none=True) for message in req.messages]
+    started_at = time.perf_counter()
 
-    if req.stream:
-        return StreamingResponse(
-            _single_chunk_stream(response_payload),
-            media_type="text/event-stream",
-            headers=headers,
+    try:
+        routed_result = await gateway.chat(_build_gateway_request(req))
+        response_payload = _build_openai_response(routed_result)
+        headers = _routing_headers(routed_result)
+        latency_ms = (time.perf_counter() - started_at) * 1000
+
+        audit.log_chat_event(
+            endpoint="/v1/chat/completions",
+            client_ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            correlation_id=request.headers.get("x-correlation-id"),
+            idempotency_key=request.headers.get("idempotency-key"),
+            requested_model=req.model,
+            messages=request_messages,
+            response_format=req.response_format.model_dump(exclude_none=True, by_alias=True) if req.response_format else None,
+            tools=req.tools,
+            stream_requested=req.stream,
+            routed_result=routed_result,
+            response_payload=response_payload,
+            latency_ms=latency_ms,
         )
 
-    return JSONResponse(response_payload, headers=headers)
+        if req.stream:
+            return StreamingResponse(
+                _single_chunk_stream(response_payload),
+                media_type="text/event-stream",
+                headers=headers,
+            )
+
+        return JSONResponse(response_payload, headers=headers)
+    except Exception as exc:
+        latency_ms = (time.perf_counter() - started_at) * 1000
+        audit.log_chat_event(
+            endpoint="/v1/chat/completions",
+            client_ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            correlation_id=request.headers.get("x-correlation-id"),
+            idempotency_key=request.headers.get("idempotency-key"),
+            requested_model=req.model,
+            messages=request_messages,
+            response_format=req.response_format.model_dump(exclude_none=True, by_alias=True) if req.response_format else None,
+            tools=req.tools,
+            stream_requested=req.stream,
+            routed_result=None,
+            response_payload=None,
+            latency_ms=latency_ms,
+            error=exc,
+        )
+        raise
 
 
 @app.get("/tools", response_model=List[ToolSchema], dependencies=[Depends(api_key_auth)])

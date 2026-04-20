@@ -98,6 +98,31 @@ ToolsOpt = Annotated[
     Optional[Path],
     typer.Option("--tools", exists=True, dir_okay=False, help="Ruta a un fichero JSON con herramientas."),
 ]
+RequestLogPathOpt = Annotated[
+    Optional[Path],
+    typer.Option(
+        "--request-log-path",
+        help="Ruta JSONL para auditar prompts, respuestas y uso del gateway.",
+        rich_help_panel="Observabilidad",
+    ),
+]
+RequestLogContentOpt = Annotated[
+    bool,
+    typer.Option(
+        "--request-log-include-content/--request-log-no-content",
+        help="Guarda contenido truncado de prompts y respuestas en el log de auditoria.",
+        rich_help_panel="Observabilidad",
+    ),
+]
+RequestLogMaxCharsOpt = Annotated[
+    int,
+    typer.Option(
+        "--request-log-max-chars",
+        min=256,
+        help="Maximo de caracteres guardados por prompt/respuesta en el log.",
+        rich_help_panel="Observabilidad",
+    ),
+]
 
 
 @cli.command()
@@ -115,6 +140,9 @@ def serve(
     max_tokens: MaxTokOpt = 1024,
     lora: LoraOpt = None,
     tools: ToolsOpt = None,
+    request_log_path: RequestLogPathOpt = None,
+    request_log_include_content: RequestLogContentOpt = False,
+    request_log_max_chars: RequestLogMaxCharsOpt = 12000,
 ) -> None:
     """Lanza el gateway HTTP y los runtimes configurados."""
     if not model and not catalog:
@@ -144,6 +172,10 @@ def serve(
         env["LORA"] = str(lora.resolve())
     if tools:
         env["TOOLS_PATH"] = str(tools.resolve())
+    if request_log_path:
+        env["REQUEST_LOG_PATH"] = str(request_log_path.expanduser().resolve())
+        env["REQUEST_LOG_INCLUDE_CONTENT"] = "1" if request_log_include_content else "0"
+        env["REQUEST_LOG_MAX_CHARS"] = str(request_log_max_chars)
 
     typer.echo(f"Levantando LMLauncher Gateway en http://{host}:{port}")
     if catalog:
@@ -160,6 +192,10 @@ def serve(
         typer.echo(f"  LoRA: {lora.name}")
     if tools:
         typer.echo(f"  Herramientas: {tools.name}")
+    if request_log_path:
+        typer.echo(f"  Request log: {request_log_path}")
+        typer.echo(f"  Guardar contenido: {'si' if request_log_include_content else 'no'}")
+        typer.echo(f"  Max chars log: {request_log_max_chars}")
 
     try:
         subprocess.run(

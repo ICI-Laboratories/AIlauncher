@@ -56,6 +56,10 @@ class OllamaRuntime(BackendRuntime):
             "stream": False,
         }
 
+        think_value = self.route.settings.get("think")
+        if think_value is not None:
+            payload["think"] = bool(think_value)
+
         options: dict[str, Any] = {}
         if request.temperature is not None:
             options["temperature"] = request.temperature

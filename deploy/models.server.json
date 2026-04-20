@@ -1,0 +1,22 @@
+{
+  "default_model": "sara-main",
+  "models": [
+    {
+      "name": "sara-main",
+      "backend": "ollama",
+      "target": "qwen3:30b",
+      "priority": 100,
+      "aliases": ["default", "qwen-main", "research-main", "sara-structured", "research-structured"],
+      "base_url": "http://127.0.0.1:11434",
+      "settings": {
+        "think": false
+      },
+      "capabilities": {
+        "structured_output": true,
+        "json_mode": true,
+        "tools": true,
+        "streaming": true
+      }
+    }
+  ]
+}

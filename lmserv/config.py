@@ -7,6 +7,19 @@ from pathlib import Path
 from typing import Iterable
 
 
+def _getenv_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def _getenv_int(name: str, default: int) -> int:
     raw = os.getenv(name)
     if raw is None:
@@ -62,6 +75,9 @@ class Config:
     tools_path: str | None = os.getenv("TOOLS_PATH")
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     request_timeout_s: float = _getenv_float("REQUEST_TIMEOUT_S", 120.0)
+    request_log_path: str | None = os.getenv("REQUEST_LOG_PATH")
+    request_log_include_content: bool = _getenv_bool("REQUEST_LOG_INCLUDE_CONTENT", False)
+    request_log_max_chars: int = _getenv_int("REQUEST_LOG_MAX_CHARS", 12000)
 
     # Model parameters
     max_tokens: int = _getenv_int("MAX_TOKENS", 1024)
@@ -89,6 +105,8 @@ class Config:
 
         if self.catalog_path:
             self.catalog_path = str(Path(self.catalog_path).expanduser().resolve())
+        if self.request_log_path:
+            self.request_log_path = str(Path(self.request_log_path).expanduser().resolve())
 
         if self.model and self.backend == "llama_cpp":
             self.llama_bin = self._resolve_llama_bin()
@@ -125,9 +143,10 @@ class Config:
         lora_info = f", lora='{self.lora}'" if self.lora else ""
         tools_info = f", tools='{self.tools_path}'" if self.tools_path else ""
         catalog_info = f", catalog='{self.catalog_path}'" if self.catalog_path else ""
+        audit_info = f", request_log='{self.request_log_path}'" if self.request_log_path else ""
         params = (
             f"backend='{self.backend}', model='{self.model}', workers={self.workers}, "
             f"host='{self.host}:{self.port}', gpu_layers={self.n_gpu_layers}, ctx={self.ctx_size}"
-            f"{lora_info}{tools_info}{catalog_info}"
+            f"{lora_info}{tools_info}{catalog_info}{audit_info}"
         )
         return f"<Config {params}>"

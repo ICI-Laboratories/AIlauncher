@@ -62,6 +62,52 @@ Ejemplo de comportamiento:
 - `research-structured` se usa como fallback cuando la solicitud pide
   `response_format` y el modelo principal no soporta salida estructurada
 
+## Observabilidad para el paper
+
+El gateway puede guardar cada solicitud en un archivo JSONL para estudiar:
+
+- prompts y respuestas truncadas
+- seleccion de modelo y razon de ruteo
+- uso de tokens reportado por el backend
+- tamanos de contexto y herramientas pedidas
+
+Ejemplo:
+
+```bash
+lmserv serve \
+  --catalog deploy/models.server.json \
+  --port 8009 \
+  --request-log-path logs/requests.jsonl \
+  --request-log-include-content \
+  --request-log-max-chars 12000
+```
+
+Variables equivalentes:
+
+- `REQUEST_LOG_PATH`
+- `REQUEST_LOG_INCLUDE_CONTENT=1`
+- `REQUEST_LOG_MAX_CHARS=12000`
+
+El archivo queda en formato JSON Lines para poder procesarlo despues con
+Python, DuckDB o notebooks.
+
+## Perfil recomendado para SARA
+
+El repositorio incluye un catalogo pensado para servidor con Ollama:
+
+```bash
+lmserv serve --catalog deploy/models.server.json --port 8009
+```
+
+En el perfil ajustado para este servidor, `sara-main` apunta a `qwen3:30b`,
+porque SARA depende mucho de `response_format` y de salida estructurada.
+Si mas adelante hay mas disco disponible, `gemma4:26b` se puede agregar como
+segunda ruta experimental sin tocar a SARA.
+
+Para `qwen3`, el catalogo de servidor fija `think=false` hacia Ollama. Eso
+evita que el presupuesto de tokens se consuma en razonamiento oculto antes de
+emitir el JSON que espera SARA.
+
 ## Integracion desde una app existente
 
 ```python
@@ -103,5 +149,6 @@ para cumplir la vision completa del paper:
 ## Documentos del proyecto
 
 - Arquitectura: [docs/lmlauncher-architecture.md](docs/lmlauncher-architecture.md)
-- Paper en borrador: [paper/CIREDII2026_LMLauncher_Draft.md](paper/CIREDII2026_LMLauncher_Draft.md)
+- Despliegue en servidor: [docs/server-deployment.md](docs/server-deployment.md)
 - Catalogo de ejemplo: [models.example.json](models.example.json)
+- Catalogo recomendado para SARA: [deploy/models.server.json](deploy/models.server.json)
