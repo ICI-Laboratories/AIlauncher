@@ -150,5 +150,6 @@ para cumplir la vision completa del paper:
 
 - Arquitectura: [docs/lmlauncher-architecture.md](docs/lmlauncher-architecture.md)
 - Despliegue en servidor: [docs/server-deployment.md](docs/server-deployment.md)
+- Flujo de actualizacion remota: [docs/update-workflow.md](docs/update-workflow.md)
 - Catalogo de ejemplo: [models.example.json](models.example.json)
 - Catalogo recomendado para SARA: [deploy/models.server.json](deploy/models.server.json)

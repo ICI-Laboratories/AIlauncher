@@ -111,7 +111,22 @@ env.bak/
 venv.bak/
 logs/
 runtime/
-paper/
+# Paper build artifacts
+*.pdf
+*.docx
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.bib
+*-blx.bib
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bcf
+*.run.xml
 
 # Spyder project settings
 .spyderproject

@@ -63,13 +63,14 @@ def test_request_audit_writes_metadata_without_content(tmp_path):
 
 
 def test_request_audit_truncates_content_when_enabled(tmp_path):
+    long_prompt = "12345678" * 40
     cfg = Config(
         model="dummy",
         backend="ollama",
         api_key="test-key",
         request_log_path=str(tmp_path / "requests.jsonl"),
         request_log_include_content=True,
-        request_log_max_chars=8,
+        request_log_max_chars=256,
     )
     audit = RequestAuditLogger(cfg)
 
@@ -80,7 +81,7 @@ def test_request_audit_truncates_content_when_enabled(tmp_path):
         correlation_id=None,
         idempotency_key=None,
         requested_model=None,
-        messages=[{"role": "user", "content": "123456789ABC"}],
+        messages=[{"role": "user", "content": long_prompt}],
         response_format=None,
         tools=None,
         stream_requested=False,
