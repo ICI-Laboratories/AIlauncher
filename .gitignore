@@ -143,6 +143,22 @@ runtime/
 .dmypy.json
 dmypy.json
 
+
+# Spyder project settings
+.spyderproject
+.spyderworkspace
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
 # Pyre type checker
 .pyre/
 
@@ -151,3 +167,12 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Paper directory
+paper/
+
+# IDE and OS specific
+.vscode/
+.idea/
+.DS_Store
+desktop.ini
