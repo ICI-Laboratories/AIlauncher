@@ -28,6 +28,15 @@ def _response_format_to_ollama_format(response_format: dict[str, Any] | None) ->
     return None
 
 
+def _route_options(settings: dict[str, Any]) -> dict[str, Any]:
+    raw_options = settings.get("options", {})
+    if raw_options is None:
+        return {}
+    if not isinstance(raw_options, dict):
+        raise TypeError("La configuracion 'settings.options' de Ollama debe ser un objeto.")
+    return dict(raw_options)
+
+
 class OllamaRuntime(BackendRuntime):
     def __init__(self, route: ModelRoute, cfg: Config) -> None:
         super().__init__(route)
@@ -60,7 +69,7 @@ class OllamaRuntime(BackendRuntime):
         if think_value is not None:
             payload["think"] = bool(think_value)
 
-        options: dict[str, Any] = {}
+        options = _route_options(self.route.settings)
         if request.temperature is not None:
             options["temperature"] = request.temperature
         if request.top_p is not None:
@@ -69,6 +78,10 @@ class OllamaRuntime(BackendRuntime):
             options["num_predict"] = request.max_tokens
         if options:
             payload["options"] = options
+
+        keep_alive = self.route.settings.get("keep_alive")
+        if keep_alive is not None:
+            payload["keep_alive"] = keep_alive
 
         format_value = _response_format_to_ollama_format(request.response_format)
         if format_value is not None:

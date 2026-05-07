@@ -10,12 +10,10 @@
       "base_url": "http://127.0.0.1:11434",
       "settings": {
         "think": false,
-        "keep_alive": "24h",
+        "keep_alive": "10m",
         "options": {
           "num_ctx": 4096,
-          "num_gpu": 41,
-          "num_batch": 512,
-          "num_thread": 24
+          "num_gpu": 24
         }
       },
       "capabilities": {

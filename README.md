@@ -99,14 +99,18 @@ El repositorio incluye un catalogo pensado para servidor con Ollama:
 lmserv serve --catalog deploy/models.server.json --port 8009
 ```
 
-En el perfil ajustado para este servidor, `sara-main` apunta a `qwen3:30b`,
-porque SARA depende mucho de `response_format` y de salida estructurada.
-Si mas adelante hay mas disco disponible, `gemma4:26b` se puede agregar como
-segunda ruta experimental sin tocar a SARA.
+En el perfil ajustado para este servidor, `sara-main` apunta a
+`qwen3.6-sara:opt`, un derivado de `qwen3.6:35b` pensado para SARA. El catalogo
+fija `think=false`, `num_ctx=4096`, `num_gpu=41`, `num_batch=512`,
+`num_thread=24` y `keep_alive=24h` para mantener el modelo caliente y evitar
+que el presupuesto de tokens se consuma en razonamiento oculto antes de emitir
+el JSON que espera SARA.
 
-Para `qwen3`, el catalogo de servidor fija `think=false` hacia Ollama. Eso
-evita que el presupuesto de tokens se consuma en razonamiento oculto antes de
-emitir el JSON que espera SARA.
+La validacion del 2026-05-07 confirmo que esta ruta responde `/health`,
+`/v1/models`, `json_object`, `json_schema`, generacion larga y concurrencia
+ligera sin dejar servicios fallidos. Si mas adelante se agrega una segunda
+ruta experimental, conviene mantenerla con baja prioridad hasta medirla con
+prompts reales de SARA.
 
 ## Integracion desde una app existente
 
@@ -151,5 +155,8 @@ para cumplir la vision completa del paper:
 - Arquitectura: [docs/lmlauncher-architecture.md](docs/lmlauncher-architecture.md)
 - Despliegue en servidor: [docs/server-deployment.md](docs/server-deployment.md)
 - Flujo de actualizacion remota: [docs/update-workflow.md](docs/update-workflow.md)
+- Decision de optimizacion GPU: [docs/optimization-decision.md](docs/optimization-decision.md)
+- Experimento de build CUDA: [docs/gpu-optimized-build-experiment.md](docs/gpu-optimized-build-experiment.md)
+- Validacion final para paper: [docs/experiments/2026-05-07-paper-validation.md](docs/experiments/2026-05-07-paper-validation.md)
 - Catalogo de ejemplo: [models.example.json](models.example.json)
 - Catalogo recomendado para SARA: [deploy/models.server.json](deploy/models.server.json)
