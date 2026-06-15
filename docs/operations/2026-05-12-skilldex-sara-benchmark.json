@@ -1,0 +1,138 @@
+{
+  "created_at_utc": "2026-05-12T20:10:37Z",
+  "purpose": "Stable demo benchmark for shared AIlauncher inference used by SkillDex and SARA.",
+  "stable_route": {
+    "name": "sara-main",
+    "path": "SkillDex/SARA -> AIlauncher -> Ollama -> qwen3.6-sara:opt",
+    "ailauncher_base_url_inside_containers": "http://host.docker.internal:8009/v1",
+    "backend": "ollama",
+    "model": "qwen3.6-sara:opt",
+    "settings": {
+      "temperature": 0,
+      "max_tokens": 260,
+      "stream": false,
+      "num_ctx": 4096,
+      "num_gpu": 41,
+      "num_batch": 512,
+      "num_thread": 24,
+      "keep_alive": "5m"
+    }
+  },
+  "prompt": "Redacta un resumen tecnico en espanol de exactamente 180 palabras sobre un gateway de inferencia compartido. No uses listas. Incluye AIlauncher, GPU, tuneles Cloudflare, aislamiento por servicios, metricas de latencia y control de memoria.",
+  "results": {
+    "skilldex-brain-1": {
+      "warmup": {
+        "elapsed_s": 56.185,
+        "prompt_tokens": 65,
+        "completion_tokens": 32,
+        "completion_tps": 0.57,
+        "note": "Cold load included model transfer into VRAM."
+      },
+      "measured": [
+        {
+          "elapsed_s": 7.48,
+          "prompt_tokens": 65,
+          "completion_tokens": 260,
+          "completion_tps": 34.759
+        },
+        {
+          "elapsed_s": 7.132,
+          "prompt_tokens": 65,
+          "completion_tokens": 260,
+          "completion_tps": 36.454
+        },
+        {
+          "elapsed_s": 7.118,
+          "prompt_tokens": 65,
+          "completion_tokens": 260,
+          "completion_tps": 36.53
+        }
+      ],
+      "summary": {
+        "avg_elapsed_s": 7.243,
+        "avg_completion_tokens": 260,
+        "avg_completion_tps": 35.914,
+        "min_completion_tps": 34.759,
+        "max_completion_tps": 36.53
+      }
+    },
+    "sara-text-analysis-service-1": {
+      "warmup": {
+        "elapsed_s": 1.764,
+        "prompt_tokens": 65,
+        "completion_tokens": 32,
+        "completion_tps": 18.136,
+        "note": "Model was already warm after the SkillDex request."
+      },
+      "measured": [
+        {
+          "elapsed_s": 7.187,
+          "prompt_tokens": 65,
+          "completion_tokens": 260,
+          "completion_tps": 36.175
+        },
+        {
+          "elapsed_s": 6.859,
+          "prompt_tokens": 65,
+          "completion_tokens": 260,
+          "completion_tps": 37.908
+        },
+        {
+          "elapsed_s": 7.347,
+          "prompt_tokens": 65,
+          "completion_tokens": 260,
+          "completion_tps": 35.389
+        }
+      ],
+      "summary": {
+        "avg_elapsed_s": 7.131,
+        "avg_completion_tokens": 260,
+        "avg_completion_tps": 36.491,
+        "min_completion_tps": 35.389,
+        "max_completion_tps": 37.908
+      }
+    }
+  },
+  "gpu_after_benchmark": [
+    {
+      "index": 0,
+      "name": "NVIDIA RTX A4000",
+      "memory_used_mib": 13221,
+      "memory_total_mib": 16376
+    },
+    {
+      "index": 1,
+      "name": "NVIDIA RTX A4000",
+      "memory_used_mib": 12731,
+      "memory_total_mib": 16376
+    }
+  ],
+  "historical_fast_path": {
+    "source_dir": "/srv/ai-data/ailauncher/experiments/qwen36-runtime-port-20260504T062152Z",
+    "source_file": "llamacpp-compatible-nothink-benchmark.jsonl",
+    "status": "Historical experiment, not active as current production default.",
+    "cases": [
+      {
+        "name": "controlled_256",
+        "completion_tokens": 256,
+        "wall_seconds": 4.14,
+        "wall_completion_tps": 61.84
+      },
+      {
+        "name": "assessment_like",
+        "completion_tokens": 768,
+        "wall_completion_tps": 76.22
+      },
+      {
+        "name": "concurrent_2",
+        "completion_tokens": 256,
+        "wall_completion_tps": 64.44
+      },
+      {
+        "name": "concurrent_1",
+        "completion_tokens": 256,
+        "wall_completion_tps": 37.87
+      }
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "default_model": "sara-main",
+  "models": [
+    {
+      "name": "sara-main",
+      "backend": "ollama",
+      "target": "qwen3.6-sara:opt",
+      "priority": 100,
+      "aliases": ["default", "qwen-main", "research-main", "sara-structured", "research-structured"],
+      "base_url": "http://host.docker.internal:11434",
+      "settings": {
+        "think": false,
+        "keep_alive": "24h",
+        "options": {
+          "num_ctx": 4096,
+          "num_gpu": 41,
+          "num_batch": 512,
+          "num_thread": 24
+        }
+      },
+      "capabilities": {
+        "structured_output": true,
+        "json_mode": true,
+        "tools": true,
+        "streaming": true
+      }
+    }
+  ]
+}

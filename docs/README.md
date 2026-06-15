@@ -63,3 +63,9 @@ docs/
 * [ ] Automatizar export de OpenAPI a **Redoc** HTML.
 * [ ] Agregar un diagrama de secuencia para `WorkerPool`.
 * [ ] Documentar política de versionado de modelos (.gguf).
+
+## Runbooks operativos recientes
+
+| Fecha | Documento | Proposito |
+|---|---|---|
+| 2026-05-12 | [SkillDex + SARA shared inference demo runbook](operations/2026-05-12-skilldex-sara-demo-runbook.md) | Estado estable para demo, configuracion del servidor, incidente GPU/memoria, benchmarks SkillDex/SARA, y plan para retomar el fast path de ~60 tok/s. |
