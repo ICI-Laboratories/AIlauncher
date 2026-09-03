@@ -4,6 +4,13 @@ Date of stabilization: 2026-05-12 America/Mexico_City
 
 Last verified snapshot: 2026-05-13T01:59:29Z
 
+> **Historical snapshot — do not use its auth topology.** The container names,
+> health rows and commands below describe the May 2026 demo only. Since the
+> September 2026 identity cutover, `auth_services` is the sole human credential
+> authority; `skilldex-auth` and `sara-auth-service` must not be started. Current
+> product gateways consume central Identity with their assigned client and
+> resource audience.
+
 This document is intentionally verbose. It is meant to be the handoff note for
 returning to this project later without having to reconstruct the deployment
 history from terminal scrollback.
