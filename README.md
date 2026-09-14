@@ -1,3 +1,15 @@
+# AIlauncher: servicio LLM compartido
+
+El despliegue recomendado para varias aplicaciones Docker está en [docs/shared-server.md](docs/shared-server.md). Ejecuta un único motor persistente y un gateway con claves por aplicación, cola limitada y reparto justo. Conserva mensajes multimodales, instrucciones, herramientas y streaming nativo; cada petición incluye su propio historial.
+
+El servidor actual utiliza ambas GPU NVIDIA, cuatro solicitudes simultáneas y 8192 tokens de contexto por solicitud. El perfil AMD/ROCm conserva una ruta de despliegue para ocho GPU; requiere validación en ese hardware. Los límites deben ajustarse con mediciones al cambiar de modelo.
+
+Se conserva el historial completo de `ICI-Laboratories/lmServer` y sus fuentes en [legacy/lmserver](legacy/lmserver). Sus componentes Go/ROCm y Rust quedan disponibles como referencia; el gateway compartido no inicia procesos CLI por petición. La integración no implica que los componentes heredados estén probados en producción.
+
+## Modos heredados
+
+Los comandos y el catálogo siguientes se conservan por compatibilidad. Para el servicio compartido utiliza el Compose y las instrucciones anteriores.
+
 # LMLauncher
 
 LMLauncher esta evolucionando de un servidor local acoplado a `llama.cpp`
