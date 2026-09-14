@@ -1,0 +1,137 @@
+name: ailauncher
+
+# Existing host llama-server is the default. Enable exactly one engine profile
+# only when replacing that host service; choose its URL in MODEL_BACKEND_URL.
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.gateway
+    image: ailauncher-gateway:local
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8009}:8000"
+    environment:
+      MODEL_BACKEND_URL: ${MODEL_BACKEND_URL:-http://172.30.81.1:8080/v1}
+      MODEL_BACKEND_MODEL: ${MODEL_BACKEND_MODEL:-qwen-local}
+      MODEL_ALIASES: ${MODEL_ALIASES:-qwen-local,sara-main,local-model}
+      APP_KEYS_FILE: /run/secrets/app-keys.json
+      MAX_INFLIGHT: ${MAX_INFLIGHT:-4}
+      MAX_QUEUE: ${MAX_QUEUE:-32}
+      PER_APP_INFLIGHT: ${PER_APP_INFLIGHT:-2}
+      QUEUE_TIMEOUT_SECONDS: ${QUEUE_TIMEOUT_SECONDS:-60}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-300}
+      MAX_OUTPUT_TOKENS: ${MAX_OUTPUT_TOKENS:-2048}
+      MAX_BODY_BYTES: ${MAX_BODY_BYTES:-16777216}
+      MAX_CONTEXT_TOKENS: ${MAX_CONTEXT_TOKENS:-8192}
+    volumes:
+      - type: bind
+        source: ${APP_KEYS_HOST_FILE:-/etc/ailauncher/app-keys.json}
+        target: /run/secrets/app-keys.json
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      apps:
+        aliases: [llm-gateway]
+      backend: {}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  inference-nvidia:
+    profiles: [nvidia]
+    image: ${LLAMA_CUDA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+    restart: unless-stopped
+    gpus: all
+    environment:
+      CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-0,1}
+    volumes:
+      - ${MODELS_DIR:-/srv/models}:/models:ro
+    command:
+      - --model
+      - /models/${MODEL_FILE:-model.gguf}
+      - --mmproj
+      - /models/${MMPROJ_FILE:-mmproj.gguf}
+      - --alias
+      - ${MODEL_BACKEND_MODEL:-qwen-local}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --n-gpu-layers
+      - "99"
+      - --split-mode
+      - layer
+      - --tensor-split
+      - ${NVIDIA_TENSOR_SPLIT:-2,1}
+      - --ctx-size
+      - ${ENGINE_CONTEXT_TOKENS:-32768}
+      - --parallel
+      - ${MAX_INFLIGHT:-4}
+      - --cont-batching
+      - --flash-attn
+      - "on"
+    networks: [backend]
+
+  inference-amd:
+    profiles: [amd]
+    image: ${LLAMA_ROCM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-rocm}
+    restart: unless-stopped
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - ${AMD_VIDEO_GID:-44}
+      - ${AMD_RENDER_GID:-109}
+    environment:
+      HIP_VISIBLE_DEVICES: ${HIP_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}
+    volumes:
+      - ${MODELS_DIR:-/srv/models}:/models:ro
+    command:
+      - --model
+      - /models/${MODEL_FILE:-model.gguf}
+      - --mmproj
+      - /models/${MMPROJ_FILE:-mmproj.gguf}
+      - --alias
+      - ${MODEL_BACKEND_MODEL:-qwen-local}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --n-gpu-layers
+      - "99"
+      - --split-mode
+      - layer
+      - --tensor-split
+      - ${AMD_TENSOR_SPLIT:-1,1,1,1,1,1,1,1}
+      - --ctx-size
+      - ${ENGINE_CONTEXT_TOKENS:-32768}
+      - --parallel
+      - ${MAX_INFLIGHT:-4}
+      - --cont-batching
+      - --flash-attn
+      - "on"
+    networks: [backend]
+
+networks:
+  apps:
+    external: true
+    name: ${LLM_DOCKER_NETWORK:-llm-apps}
+  backend:
+    external: true
+    name: ${LLM_BACKEND_NETWORK:-llm-backend}

@@ -1,0 +1,20 @@
+{
+  "description": "Deployment inventory only; shared_api reads its environment, not this legacy-catalog file.",
+  "default_model": "qwen-local",
+  "models": [
+    {
+      "name": "qwen-local",
+      "backend": "shared-openai-http",
+      "aliases": ["sara-main", "local-model"],
+      "api_base_url": "http://llm-gateway:8000/v1",
+      "context_tokens_per_request": 8192,
+      "max_output_tokens": 2048,
+      "capabilities": {
+        "streaming": true,
+        "vision": "requires model and mmproj support in the inference engine",
+        "tools": "depends on upstream model and chat template",
+        "structured_output": "depends on upstream model and engine"
+      }
+    }
+  ]
+}
