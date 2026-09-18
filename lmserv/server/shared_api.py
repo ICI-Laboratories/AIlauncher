@@ -273,20 +273,24 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
         payload = await read_payload(request, cfg.max_body_bytes)
         alias = payload.model or cfg.aliases[0]
         if alias not in cfg.aliases:
-            raise HTTPException(404, "Unknown model alias")
+            logger.warning(
+                "Unknown model alias '%s' requested by app '%s'; defaulting to '%s'",
+                alias, app_id, cfg.aliases[0],
+            )
+            alias = cfg.aliases[0]
         if payload.max_tokens is not None and payload.max_completion_tokens is not None:
             raise HTTPException(422, "Specify only one output token limit")
-        limit = payload.max_tokens or payload.max_completion_tokens or cfg.max_output_tokens
-        if limit > cfg.max_output_tokens:
-            raise HTTPException(422, f"Output budget exceeds {cfg.max_output_tokens} tokens")
+        requested_limit = payload.max_tokens or payload.max_completion_tokens or cfg.max_output_tokens
+        was_clamped = requested_limit > cfg.max_output_tokens
+        limit = min(requested_limit, cfg.max_output_tokens)
         body = payload.model_dump(exclude_none=True)
         body.pop("max_completion_tokens", None)
         body["max_tokens"] = limit
         body["model"] = cfg.backend_model
         async with cancel_on_disconnect(request):
-            return await forward(request, payload, body, alias, app_id)
+            return await forward(request, payload, body, alias, app_id, was_clamped=was_clamped)
 
-    async def forward(request, payload, body, alias, app_id):
+    async def forward(request, payload, body, alias, app_id, was_clamped: bool = False):
         state = request.app.state
         cfg = state.settings
         workload = "vision" if is_vision(payload.messages) else "text"
@@ -331,6 +335,8 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                 upstream = await state.client.send(upstream_request, stream=True)
             status = upstream.status_code
             headers = {"X-Request-ID": request_id, "X-LMLauncher-Selected-Model": alias}
+            if was_clamped:
+                headers["X-Tokens-Clamped"] = "true"
             if "retry-after" in upstream.headers:
                 headers["Retry-After"] = upstream.headers["retry-after"]
             if payload.stream and upstream.is_success:

@@ -5,7 +5,10 @@ from pathlib import Path
 import pwd
 import secrets
 
-apps = ('admin', 'sara', 'skilldex', 'alumni', 'examgen', 'slidercreator', 'smartdoc', 'enterprisechat', 'guardai')
+apps = (
+    'admin', 'sara', 'skilldex', 'alumni', 'examgen', 'slidercreator',
+    'smartdoc', 'enterprisechat', 'guardai', 'agentagenda', 'sarapad'
+)
 keyfile = Path('/etc/ailauncher/app-keys.json')
 keyfile.parent.mkdir(mode=0o750, exist_ok=True)
 keys = json.loads(keyfile.read_text()) if keyfile.exists() else {}
