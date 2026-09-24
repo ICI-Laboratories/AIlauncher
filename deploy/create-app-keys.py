@@ -7,7 +7,8 @@ import secrets
 
 apps = (
     'admin', 'sara', 'skilldex', 'alumni', 'examgen', 'slidercreator',
-    'smartdoc', 'enterprisechat', 'guardai', 'agentagenda', 'sarapad'
+    'smartdoc', 'enterprisechat', 'guardai', 'agentagenda', 'sarapad',
+    'fimebot', 'bitacora'
 )
 keyfile = Path('/etc/ailauncher/app-keys.json')
 keyfile.parent.mkdir(mode=0o750, exist_ok=True)
