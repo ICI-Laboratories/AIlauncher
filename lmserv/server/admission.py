@@ -140,8 +140,8 @@ class AdmissionController:
     ) -> AsyncIterator[AdmissionLease]:
         if not app_id:
             raise ValueError("app_id is required")
-        if workload not in {"text", "vision"}:
-            raise ValueError("workload must be text or vision")
+        if workload not in {"text", "vision", "embeddings"}:
+            raise ValueError("workload must be text, vision or embeddings")
         can_start = (
             self._inflight < self.max_inflight
             and self._active[app_id] < self.per_app_inflight

@@ -1,0 +1,15 @@
+[Unit]
+Description=Stop only AIlauncher auxiliaries when RTX 3090 free memory falls below 3 GiB
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/lib/ailauncher-auxiliary/gpu_guard.py
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

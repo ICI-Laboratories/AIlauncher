@@ -1,0 +1,28 @@
+[Unit]
+Description=AIlauncher isolated OCR llama.cpp on RTX 3090
+BindsTo=ailauncher-aux-guard.service
+Requires=docker.service ailauncher-aux-guard.service ailauncher-aux-network.service
+After=docker.service ailauncher-aux-guard.service ailauncher-aux-network.service network-online.target
+
+[Service]
+Type=simple
+User=cite
+Group=cite
+Environment=CUDA_VISIBLE_DEVICES=GPU-986b5314-77d6-6659-236a-6a76dbe59619
+Environment=LD_LIBRARY_PATH=/home/cite/auxiliary-llama/runtime-10851
+WorkingDirectory=/home/cite/auxiliary-llama
+ExecStartPre=/usr/bin/python3 /usr/local/lib/ailauncher-auxiliary/wait_backend.py http://127.0.0.1:8080/health
+ExecStartPre=/usr/bin/python3 /usr/local/lib/ailauncher-auxiliary/gpu_guard.py --require-free 6500
+ExecStart=/home/cite/auxiliary-llama/runtime-10851/llama-server --model /home/cite/auxiliary-llama/models/GLM-OCR-Q8_0.gguf --mmproj /home/cite/auxiliary-llama/models/mmproj-GLM-OCR-Q8_0.gguf --alias glm-ocr --device CUDA0 --split-mode none --n-gpu-layers 99 --ctx-size 8192 --parallel 1 --batch-size 512 --ubatch-size 256 --image-max-tokens 4096 --flash-attn on --threads 4 --threads-batch 4 --threads-http 4 --host 172.30.81.1 --port 8020 --jinja --temp 0 --top-p 0.9 --predict 4096 --no-context-shift --no-webui
+Restart=no
+TimeoutStartSec=600
+TimeoutStopSec=15
+KillMode=control-group
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Restrict auxiliary llama.cpp endpoints to private backend bridge
+Requires=docker.service
+After=docker.service
+Before=ailauncher-ocr.service ailauncher-embeddings.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/ailauncher-auxiliary/aux_network.sh
+
+[Install]
+WantedBy=multi-user.target

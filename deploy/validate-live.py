@@ -34,7 +34,10 @@ async def main():
       result['stream_first_content_seconds']=round(time.monotonic()-start,2);break
   await asyncio.sleep(2)
   result['after_cancel']=(await c.get(BASE+'/metrics',headers=headers())).json()
-  result['oversize_output_status']=(await c.post(BASE+'/v1/chat/completions',headers=headers(),json={'messages':[{'role':'user','content':'hola'}],'max_tokens':30000})).status_code
+  oversized=await c.post(BASE+'/v1/chat/completions',headers=headers(),json={'messages':[{'role':'user','content':'hola'}],'max_tokens':30000})
+  result['oversize_output_status']=oversized.status_code
+  result['oversize_output_clamped']=oversized.headers.get('x-tokens-clamped') == 'true'
+  result['unknown_model_status']=(await c.post(BASE+'/v1/chat/completions',headers=headers(),json={'model':'unconfigured-model','messages':[{'role':'user','content':'hola'}]})).status_code
  print(json.dumps(result,indent=2))
  assert result['ready']['status'] == 'ready'
  assert result['unauthenticated_status'] == 401
@@ -43,5 +46,7 @@ async def main():
  assert result['structured'] == {'voltage': 12}
  assert 'red' in result['vision'].lower()
  assert result['after_cancel']['inflight'] == 0
- assert result['oversize_output_status'] == 422
+ assert result['oversize_output_status'] == 200
+ assert result['oversize_output_clamped']
+ assert result['unknown_model_status'] == 404
 asyncio.run(main())

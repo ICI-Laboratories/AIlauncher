@@ -25,6 +25,13 @@ clients.mkdir(mode=0o700, exist_ok=True)
 os.chown(clients, owner.pw_uid, owner.pw_gid)
 for app in apps:
     target = clients / (app + '.env')
-    target.write_text('OPENAI_BASE_URL=http://llm-gateway:8000/v1\nOPENAI_MODEL=qwen-local\nOPENAI_API_KEY=' + keys[app] + '\n')
+    target.write_text(
+        'LLM_GATEWAY_BASE_URL=http://llm-gateway:8000/v1\n'
+        'LLM_GATEWAY_API_KEY=' + keys[app] + '\n'
+        '# SDK compatibility: these aliases point to the same gateway.\n'
+        'OPENAI_BASE_URL=http://llm-gateway:8000/v1\n'
+        'OPENAI_MODEL=qwen-local\n'
+        'OPENAI_API_KEY=' + keys[app] + '\n'
+    )
     os.chown(target, owner.pw_uid, owner.pw_gid)
     target.chmod(0o600)

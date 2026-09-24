@@ -1,0 +1,29 @@
+[Unit]
+Description=AIlauncher isolated Qwen embeddings llama.cpp on RTX 3090
+BindsTo=ailauncher-aux-guard.service
+Requires=docker.service ailauncher-aux-guard.service ailauncher-aux-network.service
+After=docker.service ailauncher-aux-guard.service ailauncher-aux-network.service ailauncher-ocr.service network-online.target
+
+[Service]
+Type=simple
+User=cite
+Group=cite
+Environment=CUDA_VISIBLE_DEVICES=GPU-986b5314-77d6-6659-236a-6a76dbe59619
+Environment=LD_LIBRARY_PATH=/home/cite/auxiliary-llama/runtime-10851
+WorkingDirectory=/home/cite/auxiliary-llama
+ExecStartPre=/usr/bin/python3 /usr/local/lib/ailauncher-auxiliary/wait_backend.py http://127.0.0.1:8080/health
+ExecStartPre=/usr/bin/python3 /usr/local/lib/ailauncher-auxiliary/wait_backend.py http://172.30.81.1:8020/health
+ExecStartPre=/usr/bin/python3 /usr/local/lib/ailauncher-auxiliary/gpu_guard.py --require-free 6400
+ExecStart=/home/cite/auxiliary-llama/runtime-10851/llama-server --model /home/cite/auxiliary-llama/models/Qwen3-Embedding-0.6B-f16.gguf --alias qwen3-embedding --device CUDA0 --split-mode none --n-gpu-layers 99 --embedding --pooling last --embd-normalize 2 --ctx-size 2048 --parallel 1 --batch-size 2048 --ubatch-size 2048 --flash-attn on --threads 4 --threads-batch 4 --threads-http 4 --host 172.30.81.1 --port 8021 --no-webui
+Restart=no
+TimeoutStartSec=600
+TimeoutStopSec=15
+KillMode=control-group
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

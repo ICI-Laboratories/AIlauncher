@@ -1,8 +1,13 @@
 # AIlauncher: servicio LLM compartido
 
-El despliegue recomendado para varias aplicaciones Docker está en [docs/shared-server.md](docs/shared-server.md). Ejecuta un único motor persistente y un gateway con claves por aplicación, cola limitada y reparto justo. Conserva mensajes multimodales, instrucciones, herramientas y streaming nativo; cada petición incluye su propio historial.
+El despliegue recomendado para varias aplicaciones Docker está en [docs/shared-server.md](docs/shared-server.md). Un gateway con claves por aplicación enruta a procesos persistentes de llama.cpp, con cola limitada y reparto justo por servicio. Conserva mensajes multimodales, instrucciones, herramientas y streaming nativo; cada petición incluye su propio historial.
 
-El servidor actual utiliza ambas GPU NVIDIA, cuatro solicitudes simultáneas y 8192 tokens de contexto por solicitud. El perfil AMD/ROCm conserva una ruta de despliegue para ocho GPU; requiere validación en ese hardware. Los límites deben ajustarse con mediciones al cambiar de modelo.
+La ruta principal conserva los límites configurados para el motor actual; los valores de ejemplo son cuatro solicitudes simultáneas y 8192 tokens de contexto por solicitud. El perfil AMD/ROCm conserva una ruta de despliegue para ocho GPU; requiere validación en ese hardware. Los límites deben ajustarse con mediciones al cambiar de modelo.
+
+El despliegue institucional usa `lmserv.server.shared_api`; consulta
+[la fase de rutas auxiliares](docs/auxiliary-gateway.md) para OCR y embeddings.
+Los auxiliares están desactivados por defecto. El catálogo/CLI histórico descrito
+a continuación es independiente del gateway desplegado y no controla sus rutas.
 
 Se conserva el historial completo de `ICI-Laboratories/lmServer` y sus fuentes en [legacy/lmserver](legacy/lmserver). Sus componentes Go/ROCm y Rust quedan disponibles como referencia; el gateway compartido no inicia procesos CLI por petición. La integración no implica que los componentes heredados estén probados en producción.
 

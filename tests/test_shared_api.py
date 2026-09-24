@@ -90,6 +90,7 @@ async def test_forwards_native_images_instructions_schema_tools_and_parameters()
     {"max_tokens": True}, {"max_tokens": "12"}, {"max_tokens": 1.5},
     {"id_slot": 0}, {"cache_prompt": True}, {"slot_save_path": "/tmp/context"},
     {"n": 2}, {"messages": [{"role": "invalid", "content": "private"}]},
+    {"messages": [{"role": {}, "content": "private"}]},
 ])
 async def test_invalid_budgets_and_backend_controls_never_reach_engine(extra):
     def backend(request):
@@ -102,7 +103,7 @@ async def test_invalid_budgets_and_backend_controls_never_reach_engine(extra):
 
 
 @pytest.mark.asyncio
-async def test_body_limit_unknown_model_fallback_and_clamped_output_budget():
+async def test_body_limit_unknown_model_rejection_and_clamped_output_budget():
     seen = []
     def backend(request):
         seen.append(json.loads(request.content))
@@ -112,28 +113,29 @@ async def test_body_limit_unknown_model_fallback_and_clamped_output_budget():
         assert (await client.post("/v1/chat/completions", headers=AUTH, json={
             **BASE, "messages": [{"role": "user", "content": "x" * 300}],
         })).status_code == 413
-        # Unknown model falls back to default alias (public) with 200
+        # An unknown alias must never silently route to the chat backend.
         unknown_resp = await client.post("/v1/chat/completions", headers=AUTH, json={**BASE, "model": "unknown-model"})
-        assert unknown_resp.status_code == 200
-        assert unknown_resp.headers["x-lmlauncher-selected-model"] == "public"
+        assert unknown_resp.status_code == 404
+        assert seen == []
         # Standard request uses default budget
         assert (await client.post("/v1/chat/completions", headers=AUTH, json=BASE)).status_code == 200
-        assert seen[1]["max_tokens"] == 128
+        assert seen[0]["max_tokens"] == 128
         # Request with tokens over budget is softly clamped with X-Tokens-Clamped header
         clamped_resp = await client.post("/v1/chat/completions", headers=AUTH, json={**BASE, "max_tokens": 200})
         assert clamped_resp.status_code == 200
         assert clamped_resp.headers["x-tokens-clamped"] == "true"
-        assert seen[2]["max_tokens"] == 128
-        assert len(seen) == 3
+        assert seen[1]["max_tokens"] == 128
+        assert len(seen) == 2
 
 
 @pytest.mark.asyncio
-async def test_backend_error_status_retry_after_and_json_preserved():
-    error = {"error": {"message": "engine busy", "type": "overloaded"}}
+async def test_backend_error_status_and_retry_after_preserved_without_private_details():
+    error = {"error": {"message": "engine busy: private prompt or path", "type": "overloaded"}}
     async with gateway(lambda req: httpx.Response(429, headers={"Retry-After": "9"}, json=error)) as (app, client):
         response = await client.post("/v1/chat/completions", headers=AUTH, json={**BASE, "stream": True})
         assert response.status_code == 429
-        assert response.json() == error
+        assert response.json() == {"error": {"message": "Inference backend rejected request", "type": "upstream_error"}}
+        assert "private prompt" not in response.text
         assert response.headers["retry-after"] == "9"
         assert app.state.admission.snapshot()["inflight"] == 0
 

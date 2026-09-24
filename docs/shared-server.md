@@ -1,11 +1,18 @@
 # Shared LLM service for Docker applications
 
-AIlauncher is the HTTP gateway; one long-lived `llama-server` holds the model and
-performs inference. Applications use an OpenAI-compatible `/v1` URL and separate
-API keys. The gateway does not launch a model process for each request.
+AIlauncher is the HTTP gateway. The default route uses the existing long-lived
+`llama-server` for chat; optional OCR and embedding routes use their own llama.cpp
+servers and admission queues. Applications use an OpenAI-compatible `/v1` URL and
+separate API keys. The gateway never starts engines or loads/downloads models.
+
+See [the auxiliary routing guide](auxiliary-gateway.md) for phase 2 configuration,
+endpoint contracts and migration checks. Auxiliary routes remain disabled by default.
 
 ```text
-Docker apps -> http://llm-gateway:8000/v1 -> shared gateway -> llama-server -> GPU(s)
+Docker apps -> http://llm-gateway:8000/v1 -> shared gateway
+                                          |-> chat llama-server
+                                          |-> OCR llama-server (opt-in)
+                                          |-> embeddings llama-server (opt-in)
 ```
 
 The AMD project and its original deployment material remain in
@@ -108,8 +115,8 @@ networks and services:
 services:
   app:
     environment:
-      OPENAI_BASE_URL: http://llm-gateway:8000/v1
-      OPENAI_API_KEY: ${APP_LLM_API_KEY}
+      LLM_GATEWAY_BASE_URL: http://llm-gateway:8000/v1
+      LLM_GATEWAY_API_KEY: ${APP_LLM_API_KEY}
       OPENAI_MODEL: qwen-local
     networks: [default, llm]
 networks:
@@ -118,27 +125,31 @@ networks:
     name: llm-apps
 ```
 
-`OPENAI_MODEL` is a common application convention; configure the equivalent
-variable if a particular app uses another name. The Python OpenAI client reads
-`OPENAI_BASE_URL` and `OPENAI_API_KEY`; pass the model explicitly:
+Configure the model variable used by the application (`SARA_LLM_MODEL`,
+`DEFAULT_LLM_MODEL`, etc.). Migrated apps use the canonical `LLM_GATEWAY_*`
+variables and ignore their old direct-engine URLs. A plain HTTP call looks like:
 
 ```python
-from openai import AsyncOpenAI
+import os
+import httpx
 
-client = AsyncOpenAI()
-answer = await client.chat.completions.create(
-    model="qwen-local",
-    messages=[
+answer = httpx.post(
+    os.environ["LLM_GATEWAY_BASE_URL"].rstrip("/") + "/chat/completions",
+    headers={"Authorization": "Bearer " + os.environ["LLM_GATEWAY_API_KEY"]},
+    json={"model": "qwen-local", "messages": [
         {"role": "system", "content": "Answer technical questions in Spanish."},
         {"role": "user", "content": "Explain a database index."},
-    ],
-    max_tokens=512,
+    ], "max_tokens": 512},
+    timeout=120,
 )
+answer.raise_for_status()
 ```
 
 Existing names `sara-main` and `local-model` are aliases for the same loaded
 model. `MODEL_ALIASES` controls accepted names (the first alias is the default); aliases do not load separate
-weights. The JSON file `deploy/models.shared.json` documents the deployment;
+weights. Unknown or disabled aliases now return 404; a model from the wrong
+operation returns 409. There is no implicit fallback to the main model.
+The JSON file `deploy/models.shared.json` documents the deployment;
 it is **not** a config input to `shared_api` or the legacy `lmserv serve` command.
 
 Applications must send their own system instructions and conversation history
@@ -152,14 +163,15 @@ end-to-end check for each application.
 
 ## Capacity and context
 
-Default admission limits are four active requests globally, two per app, and
+Default chat admission limits are four active requests for that engine, two per app, and
 32 queued requests. Queue wait is limited to 60 seconds and upstream request
 timeout to 300 seconds. These are initial configuration values; match
 `MAX_INFLIGHT` to measured engine capacity. A full queue returns an overload
 response instead of growing without bound. Clients should use bounded retries
 with backoff and jitter; never loop immediately on overload.
 
-`MAX_OUTPUT_TOKENS=2048` is the shared output budget. Review apps requesting
+`MAX_OUTPUT_TOKENS=2048` is the chat output budget. Higher requests are clamped and
+receive `X-Tokens-Clamped: true`; conflicting output fields are rejected. Review apps requesting
 16,384 or 30,000 output tokens before onboarding them. Long document generation
 may need multiple requests, or a separately measured larger-context service.
 `MAX_CONTEXT_TOKENS=8192` is the configured per-request context budget; the
@@ -252,6 +264,9 @@ writes individual client environment files under `/home/cite/local-ai/clients`
 with private permissions. It preserves existing credentials on subsequent runs.
 The helper assumes the local service owner is `cite`; adapt that explicit path
 and user on another host. Do not commit these files or pass the admin key to apps.
+Client files include canonical `LLM_GATEWAY_BASE_URL`/`LLM_GATEWAY_API_KEY` plus
+standard SDK aliases pointing to the same gateway. Do not put these files in
+browser bundles; the Bitácora desktop client accepts its credential in memory.
 
 Rollback: stop the gateway with Compose, stop/disable `ailauncher-relay.service`,
 and restore the backed-up host model startup script if engine settings changed.
